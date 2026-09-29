@@ -2,6 +2,7 @@ from __future__ import annotations
 import hashlib, hmac, secrets
 import logging
 from datetime import UTC, datetime
+from zoneinfo import ZoneInfo
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -23,6 +24,9 @@ def template_context(request: Request):
     request.session["locale"] = locale
     return {"locale": locale, "t": lambda key, **values: translate(locale, key, **values)}
 templates=Jinja2Templates(directory="app/templates", context_processors=[template_context])
+def mexico_time(value: datetime) -> str:
+    return value.astimezone(ZoneInfo(settings.app_timezone)).strftime("%d/%m · %H:%M")
+templates.env.filters["mexico_time"] = mexico_time
 logger=logging.getLogger(__name__)
 
 @app.get("/health")
