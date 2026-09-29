@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     strava_sync_enabled: bool = False
     include_virtual_activities: bool = False
     webhook_verify_token: str = ""
+    strava_initial_history_days: int = 3650
+    strava_rolling_sync_days: int = 21
 
 @lru_cache
 def get_settings() -> Settings:

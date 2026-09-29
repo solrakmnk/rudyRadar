@@ -6,6 +6,7 @@ import logging
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.models import Activity, Athlete
 from app.services import StravaClient, StravaError, get_valid_access_token, is_club_member, normalize_sport
 
@@ -19,7 +20,7 @@ def upsert_activity(db: Session, athlete: Athlete, item: dict) -> Activity:
         db.add(activity)
     activity.name = item.get("name", "Actividad")
     activity.sport_type = item.get("sport_type", item.get("type", ""))
-    activity.normalized_sport = normalize_sport(activity.sport_type)
+    activity.normalized_sport = normalize_sport(activity.sport_type, item.get("workout_type"))
     activity.start_date = datetime.fromisoformat(item["start_date"].replace("Z", "+00:00"))
     activity.start_date_local = datetime.fromisoformat(item["start_date_local"].replace("Z", "+00:00")) if item.get("start_date_local") else None
     activity.timezone = item.get("timezone")
@@ -38,12 +39,18 @@ def upsert_activity(db: Session, athlete: Athlete, item: dict) -> Activity:
     return activity
 
 
-def sync_activities(db: Session, athlete: Athlete, client: StravaClient, *, lookback_days: int = 365) -> int:
+def sync_activities(db: Session, athlete: Athlete, client: StravaClient, *, lookback_days: int | None = None) -> int:
+    """Backfill a bounded history once, then only refresh recent summaries."""
     token = get_valid_access_token(db, athlete, client)
-    activities = client.activities(token, datetime.now(UTC) - timedelta(days=lookback_days))
+    settings = get_settings()
+    initial_history = athlete.history_synced_at is None
+    days = lookback_days or (settings.strava_initial_history_days if initial_history else settings.strava_rolling_sync_days)
+    activities = client.activities(token, datetime.now(UTC) - timedelta(days=days))
     for item in activities:
         upsert_activity(db, athlete, item)
     athlete.last_sync_at = datetime.now(UTC)
+    if initial_history:
+        athlete.history_synced_at = athlete.last_sync_at
     db.commit()
     return len(activities)
 

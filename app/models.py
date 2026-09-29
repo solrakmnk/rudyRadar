@@ -17,6 +17,7 @@ class Athlete(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     connected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     last_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    history_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     activities: Mapped[list["Activity"]] = relationship(back_populates="athlete", cascade="all, delete-orphan")

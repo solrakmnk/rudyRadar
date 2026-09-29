@@ -144,3 +144,20 @@ def test_athlete_discipline_totals_keep_each_sport_separate(db):
     assert totals["bike"] == {"distance_m": 20_000, "activity_count": 1}
     assert totals["run"]["activity_count"] == 0
     assert totals["gym"]["activity_count"] == 1
+
+
+def test_open_water_is_kept_separate_from_pool_swimming(db):
+    carlos = athlete(1, "Carlos")
+    db.add_all([
+        carlos,
+        activity(carlos, 11, "swim", 2_000, datetime(2026, 9, 29, 15, tzinfo=UTC)),
+        activity(carlos, 12, "open_water", 3_000, datetime(2026, 9, 30, 15, tzinfo=UTC)),
+    ])
+    db.commit()
+
+    totals = athlete_discipline_stats(db, carlos.id, "week", datetime(2026, 9, 30, tzinfo=UTC))
+    board = rankings(db, "week", datetime(2026, 9, 30, tzinfo=UTC))
+
+    assert totals["swim"]["distance_m"] == 2_000
+    assert totals["open_water"]["distance_m"] == 3_000
+    assert board["open_water"][0]["distance_m"] == 3_000

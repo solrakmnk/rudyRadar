@@ -10,8 +10,11 @@ from app.models import Athlete
 
 logger = logging.getLogger(__name__)
 
-def normalize_sport(value: str | None) -> str | None:
+def normalize_sport(value: str | None, workout_type: int | None = None) -> str | None:
     s = value or ""
+    # Strava represents pool and open-water swimming as Swim.  Its swim
+    # workout type identifies open-water activities with value 2.
+    if s in {"OpenWaterSwim", "OpenWater"} or (s == "Swim" and workout_type == 2): return "open_water"
     if s == "Swim": return "swim"
     if s in {"Ride", "MountainBikeRide", "GravelRide"}: return "bike"
     if s in {"Run", "TrailRun"}: return "run"

@@ -59,7 +59,7 @@ def athlete_discipline_stats(db: Session, athlete_id: int, kind: str, now: datet
         )
     ).all()
     result: dict[str, dict[str, float | int]] = {
-        sport: {"distance_m": 0.0, "activity_count": 0} for sport in ("swim", "bike", "run", "gym")
+        sport: {"distance_m": 0.0, "activity_count": 0} for sport in ("swim", "open_water", "bike", "run", "gym")
     }
     for activity in activities:
         if activity.normalized_sport in result:
@@ -77,7 +77,7 @@ def rankings(db: Session, kind: str, now: datetime | None = None) -> dict[str, l
             Activity.normalized_sport.is_not(None),
         )
     ).all()
-    result: dict[str, list[dict[str, str | float | int]]] = {sport: [] for sport in ("swim", "bike", "run", "gym")}
+    result: dict[str, list[dict[str, str | float | int]]] = {sport: [] for sport in ("swim", "open_water", "bike", "run", "gym")}
     totals: dict[tuple[str, int], float] = {}
     counts: dict[tuple[str, int], int] = {}
     for activity in activities:
@@ -151,7 +151,7 @@ def team_sport_highlights(db: Session, now: datetime | None = None, kind: str = 
         key = (activity.normalized_sport, day)
         totals[key] = totals.get(key, 0) + activity.distance_m
     result: dict[str, dict[str, str | float]] = {}
-    for sport in ("swim", "bike", "run"):
+    for sport in ("swim", "open_water", "bike", "run"):
         candidates = [(day, distance) for (candidate_sport, day), distance in totals.items() if candidate_sport == sport]
         if candidates:
             day, distance = max(candidates, key=lambda item: item[1])
