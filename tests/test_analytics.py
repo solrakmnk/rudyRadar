@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from app.analytics import activity_highlights, athlete_period_stats, monthly_comparison, rankings, team_highlights, team_sport_highlights, weekly_comparison
+from app.analytics import activity_highlights, athlete_discipline_stats, athlete_period_stats, monthly_comparison, rankings, team_highlights, team_sport_highlights, weekly_comparison
 from app.models import Activity, Athlete
 
 
@@ -126,3 +126,21 @@ def test_last_month_and_team_discipline_highlights(db):
     assert stats["distance_m"] == 28_000
     assert highlights["bike"]["distance_m"] == 20_000
     assert highlights["run"]["day"] == "weekday_2"
+
+
+def test_athlete_discipline_totals_keep_each_sport_separate(db):
+    carlos = athlete(1, "Carlos")
+    db.add_all([
+        carlos,
+        activity(carlos, 11, "swim", 2_000, datetime(2026, 9, 29, 15, tzinfo=UTC)),
+        activity(carlos, 12, "bike", 20_000, datetime(2026, 9, 29, 15, tzinfo=UTC)),
+        activity(carlos, 13, "gym", 0, datetime(2026, 9, 30, 15, tzinfo=UTC)),
+    ])
+    db.commit()
+
+    totals = athlete_discipline_stats(db, carlos.id, "week", datetime(2026, 9, 30, tzinfo=UTC))
+
+    assert totals["swim"] == {"distance_m": 2_000, "activity_count": 1}
+    assert totals["bike"] == {"distance_m": 20_000, "activity_count": 1}
+    assert totals["run"]["activity_count"] == 0
+    assert totals["gym"]["activity_count"] == 1

@@ -47,6 +47,27 @@ def athlete_period_stats(db: Session, athlete_id: int, kind: str, now: datetime 
     }
 
 
+def athlete_discipline_stats(db: Session, athlete_id: int, kind: str, now: datetime | None = None) -> dict[str, dict[str, float | int]]:
+    """Summarize one athlete's activities by discipline for a selected period."""
+    start, end = period_bounds(kind, now or datetime.now(UTC))
+    activities = db.scalars(
+        select(Activity).where(
+            Activity.athlete_id == athlete_id,
+            Activity.start_date >= start,
+            Activity.start_date < end,
+            Activity.normalized_sport.is_not(None),
+        )
+    ).all()
+    result: dict[str, dict[str, float | int]] = {
+        sport: {"distance_m": 0.0, "activity_count": 0} for sport in ("swim", "bike", "run", "gym")
+    }
+    for activity in activities:
+        if activity.normalized_sport in result:
+            result[activity.normalized_sport]["distance_m"] += activity.distance_m
+            result[activity.normalized_sport]["activity_count"] += 1
+    return result
+
+
 def rankings(db: Session, kind: str, now: datetime | None = None) -> dict[str, list[dict[str, str | float | int]]]:
     start, end = period_bounds(kind, now or datetime.now(UTC))
     activities = db.scalars(
