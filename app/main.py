@@ -13,7 +13,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from app.config import get_settings
 from app.database import get_db
 from app.models import Activity, Athlete
-from app.analytics import activity_highlights, athlete_period_stats, rankings, weekly_comparison
+from app.analytics import activity_highlights, athlete_period_stats, rankings, team_highlights, weekly_comparison
 from app.services import Crypto, StravaClient, StravaError, get_valid_access_token, is_club_member
 from app.sync import sync_activities, upsert_activity
 from app.i18n import DEFAULT_LOCALE, SUPPORTED_LOCALES, preferred_locale, translate
@@ -76,7 +76,7 @@ def radar(request: Request, period: str="week", db: Session=Depends(get_db)):
     if not athlete or not athlete.is_active or not athlete.is_club_member: return RedirectResponse("/",status_code=303)
     if period not in {"week","month"}: period="week"
     count=request.session.pop("sync_count",None)
-    return templates.TemplateResponse(request,"radar.html",{"athlete":athlete,"period":period,"stats":athlete_period_stats(db,athlete.id,period),"rankings":rankings(db,period),"comparison":weekly_comparison(db,athlete.id),"highlights":activity_highlights(db,athlete.id),"sync_count":count})
+    return templates.TemplateResponse(request,"radar.html",{"athlete":athlete,"period":period,"stats":athlete_period_stats(db,athlete.id,period),"rankings":rankings(db,period),"comparison":weekly_comparison(db,athlete.id),"highlights":activity_highlights(db,athlete.id),"team_highlights":team_highlights(db),"sync_count":count})
 def admin_ok(request:Request):
     supplied=request.headers.get("x-admin-secret",""); auth=request.headers.get("authorization","")
     if auth.startswith("Bearer "): supplied=auth.removeprefix("Bearer ")

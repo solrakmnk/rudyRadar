@@ -23,6 +23,7 @@ MESSAGES: dict[str, dict[str, str]] = {
         "privacy_retention_title": "Conservación y contacto", "privacy_retention_text": "Conservamos los datos mientras mantengas autorizada la aplicación. Para solicitudes de privacidad contacta al administrador de RUD@S.",
         "delete_data": "Eliminar mi cuenta de Radar Rudo y mis datos", "delete_confirm": "Se eliminará tu cuenta de Radar Rudo, tus datos locales y la autorización de esta app. Tu cuenta y actividades de Strava no se borrarán. Para regresar deberás conectar Strava otra vez.",
         "data_deleted": "Tu cuenta y datos de Radar Rudo fueron eliminados.", "powered_by": "Compatible con Strava",
+        "weekly_pulse": "PULSO SEMANAL", "vs_last_week": "vs. semana pasada", "more_distance": "más kilómetros", "less_distance": "menos kilómetros", "same_distance": "mismo kilometraje", "week_stories": "Historias de la semana", "your_longest_day": "Tu día con más distancia", "your_busiest_day": "Tu día con más actividad", "team_busiest_day": "El día que más se movió RUD@S", "participants": "participantes", "sessions": "sesiones", "gym": "Gym", "no_story_yet": "La próxima actividad abre la historia de esta semana.",
     },
     "en": {
         "product": "Radar Rudo", "assistant": "Rudy finds the stories.", "connect": "Connect with Strava",
@@ -41,6 +42,7 @@ MESSAGES: dict[str, dict[str, str]] = {
         "privacy_retention_title": "Retention and contact", "privacy_retention_text": "We retain data while you authorize the application. Contact the RUD@S administrator for privacy requests.",
         "delete_data": "Delete my Radar Rudo account and data", "delete_confirm": "Your Radar Rudo account, local data, and this app authorization will be deleted. Your Strava account and activities will not be deleted. You will need to connect Strava again to return.",
         "data_deleted": "Your Radar Rudo account and local data were deleted.", "powered_by": "Compatible with Strava",
+        "weekly_pulse": "WEEKLY PULSE", "vs_last_week": "vs. last week", "more_distance": "more kilometers", "less_distance": "fewer kilometers", "same_distance": "same distance", "week_stories": "This week's stories", "your_longest_day": "Your longest-distance day", "your_busiest_day": "Your busiest day", "team_busiest_day": "RUD@S's busiest day", "participants": "participants", "sessions": "sessions", "gym": "Gym", "no_story_yet": "Your next activity starts this week's story.",
     },
 }
 

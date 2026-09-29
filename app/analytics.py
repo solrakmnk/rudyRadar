@@ -44,7 +44,7 @@ def athlete_period_stats(db: Session, athlete_id: int, kind: str, now: datetime 
     }
 
 
-def rankings(db: Session, kind: str, now: datetime | None = None) -> dict[str, list[dict[str, str | float]]]:
+def rankings(db: Session, kind: str, now: datetime | None = None) -> dict[str, list[dict[str, str | float | int]]]:
     start, end = period_bounds(kind, now or datetime.now(UTC))
     activities = db.scalars(
         select(Activity).where(
@@ -53,16 +53,19 @@ def rankings(db: Session, kind: str, now: datetime | None = None) -> dict[str, l
             Activity.normalized_sport.is_not(None),
         )
     ).all()
-    result: dict[str, list[dict[str, str | float]]] = {sport: [] for sport in ("swim", "bike", "run", "gym")}
+    result: dict[str, list[dict[str, str | float | int]]] = {sport: [] for sport in ("swim", "bike", "run", "gym")}
     totals: dict[tuple[str, int], float] = {}
+    counts: dict[tuple[str, int], int] = {}
     for activity in activities:
         key = (activity.normalized_sport, activity.athlete_id)
         totals[key] = totals.get(key, 0) + activity.distance_m
+        counts[key] = counts.get(key, 0) + 1
     names = {athlete.id: f"{athlete.firstname} {athlete.lastname}".strip() for athlete in db.scalars(select(Athlete)).all()}
     for (sport, athlete_id), distance in totals.items():
-        result[sport].append({"name": names[athlete_id], "distance_m": distance})
+        result[sport].append({"name": names[athlete_id], "distance_m": distance, "activity_count": counts[(sport, athlete_id)]})
     for sport in result:
-        result[sport].sort(key=lambda row: row["distance_m"], reverse=True)
+        metric = "activity_count" if sport == "gym" else "distance_m"
+        result[sport].sort(key=lambda row: row[metric], reverse=True)
         result[sport] = result[sport][:3]
     return result
 
@@ -94,6 +97,21 @@ def activity_highlights(db: Session, athlete_id: int, now: datetime | None = Non
     longest_day, longest_distance = max(distance_by_day.items(), key=lambda row: row[1])
     busiest_day, busiest_count = max(count_by_day.items(), key=lambda row: row[1])
     return {"longest_day": longest_day, "longest_distance_m": longest_distance, "busiest_day": busiest_day, "busiest_count": busiest_count}
+
+
+def team_highlights(db: Session, now: datetime | None = None) -> dict[str, str | int | None]:
+    """Find the weekday when the largest part of the club trained this week."""
+    start, _ = period_bounds("week", now or datetime.now(UTC))
+    activities = db.scalars(select(Activity).where(Activity.start_date >= start)).all()
+    if not activities:
+        return {"day": None, "participants": 0}
+    zone = ZoneInfo(get_settings().app_timezone)
+    athletes_by_day: dict[str, set[int]] = {}
+    for activity in activities:
+        day = activity.start_date.astimezone(zone).strftime("%A")
+        athletes_by_day.setdefault(day, set()).add(activity.athlete_id)
+    day, athlete_ids = max(athletes_by_day.items(), key=lambda row: len(row[1]))
+    return {"day": day, "participants": len(athlete_ids)}
 
 
 def monthly_comparison(db: Session, athlete_id: int, sport: str, now: datetime | None = None) -> dict[str, float | None]:

@@ -1,0 +1,11 @@
+.presentation { padding-bottom: 4rem; }
+.club-mark { width: 42px; height: 32px; object-fit: contain; vertical-align: middle; border-radius: 6px; mix-blend-mode: screen; }
+.landing-team { display: flex; align-items: center; gap: .45rem; }.landing-mark { width: 50px; height: 38px; object-fit: contain; border-radius: 8px; mix-blend-mode: multiply; }
+.story-grid { display: grid; grid-template-columns: minmax(0, .82fr) minmax(0, 1.18fr); gap: 1rem; margin: 1.2rem 0 1.8rem; }
+.story-card { position: relative; overflow: hidden; min-height: 158px; padding: 1.35rem; border: 1px solid rgba(136,190,255,.17); border-radius: 18px; background: linear-gradient(145deg,rgba(21,50,82,.95),rgba(12,31,53,.94)); box-shadow: 0 16px 38px rgba(0,0,0,.12); }
+.story-card::after { content:''; position:absolute; width:150px; height:150px; right:-78px; bottom:-85px; border-radius:999px; border:25px solid rgba(255,72,62,.12); }
+.momentum-number { margin:.25rem 0 .15rem; font-size:clamp(2.25rem,5vw,3.5rem); line-height:1; font-weight:850; letter-spacing:-.08em; }.momentum-number small { font-size:.8em; letter-spacing:-.04em; }.momentum-number.up { color:#71e6a8; }.momentum-number.down { color:#ff9a91; }.momentum-number.steady { color:#f6d773; }
+.story-card p,.story-detail,.stories-card dl { position:relative; z-index:1; }.story-card p { margin:.35rem 0; }.story-detail { color:#9bb5d2; font-size:.88rem; }.stories-card dl { display:grid; gap:.65rem; margin:.72rem 0 0; }.stories-card dl div { display:flex; justify-content:space-between; gap:1rem; align-items:baseline; }.stories-card dt { color:#9bb5d2; font-size:.82rem; }.stories-card dd { margin:0; color:#f6f8fc; font-weight:700; text-align:right; }.empty-story { color:#a9bdd6; }
+.ranking-grid--four { grid-template-columns:repeat(4,minmax(0,1fr)); }
+@media (max-width:780px) { .story-grid { grid-template-columns:1fr; }.ranking-grid--four { grid-template-columns:repeat(2,minmax(0,1fr)); }.stories-card dl div { display:block; }.stories-card dd { text-align:left; margin-top:.1rem; } }
+@media (max-width:430px) { .ranking-grid--four { grid-template-columns:1fr; } }

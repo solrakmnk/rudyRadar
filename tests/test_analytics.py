@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from app.analytics import athlete_period_stats, monthly_comparison, rankings
+from app.analytics import activity_highlights, athlete_period_stats, monthly_comparison, rankings, team_highlights, weekly_comparison
 from app.models import Activity, Athlete
 
 
@@ -73,3 +73,39 @@ def test_monthly_comparison_has_no_percentage_without_baseline(db):
     assert comparison["current_distance"] == 42_000
     assert comparison["previous_distance"] == 0
     assert comparison["percentage_change"] is None
+
+
+def test_weekly_comparison_and_highlights_include_previous_week(db):
+    carlos, ana = athlete(1, "Carlos"), athlete(2, "Ana")
+    db.add_all([
+        carlos, ana,
+        activity(carlos, 11, "run", 8_000, datetime(2026, 9, 29, 15, tzinfo=UTC)),
+        activity(carlos, 12, "run", 5_000, datetime(2026, 9, 30, 15, tzinfo=UTC)),
+        activity(carlos, 13, "run", 4_000, datetime(2026, 9, 22, 15, tzinfo=UTC)),
+        activity(ana, 14, "bike", 10_000, datetime(2026, 9, 29, 15, tzinfo=UTC)),
+    ])
+    db.commit()
+
+    now = datetime(2026, 9, 30, 18, tzinfo=UTC)
+    comparison = weekly_comparison(db, carlos.id, now)
+    highlights = activity_highlights(db, carlos.id, now)
+    team = team_highlights(db, now)
+
+    assert comparison["distance_change_m"] == 9_000
+    assert highlights["longest_distance_m"] == 8_000
+    assert team["participants"] == 2
+
+
+def test_gym_ranking_is_sorted_by_sessions(db):
+    carlos, ana = athlete(1, "Carlos"), athlete(2, "Ana")
+    db.add_all([
+        carlos, ana,
+        activity(carlos, 11, "gym", 0, datetime(2026, 9, 29, 15, tzinfo=UTC)),
+        activity(carlos, 12, "gym", 0, datetime(2026, 9, 30, 15, tzinfo=UTC)),
+        activity(ana, 13, "gym", 0, datetime(2026, 9, 29, 15, tzinfo=UTC)),
+    ])
+    db.commit()
+
+    board = rankings(db, "week", datetime(2026, 9, 30, 18, tzinfo=UTC))
+
+    assert [(row["name"], row["activity_count"]) for row in board["gym"]] == [("Carlos Runner", 2), ("Ana Runner", 1)]
