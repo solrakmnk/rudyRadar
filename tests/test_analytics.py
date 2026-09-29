@@ -96,19 +96,19 @@ def test_weekly_comparison_and_highlights_include_previous_week(db):
     assert team["participants"] == 2
 
 
-def test_gym_ranking_is_sorted_by_sessions(db):
+def test_strength_ranking_is_sorted_by_sessions(db):
     carlos, ana = athlete(1, "Carlos"), athlete(2, "Ana")
     db.add_all([
         carlos, ana,
-        activity(carlos, 11, "gym", 0, datetime(2026, 9, 29, 15, tzinfo=UTC)),
-        activity(carlos, 12, "gym", 0, datetime(2026, 9, 30, 15, tzinfo=UTC)),
-        activity(ana, 13, "gym", 0, datetime(2026, 9, 29, 15, tzinfo=UTC)),
+        activity(carlos, 11, "strength", 0, datetime(2026, 9, 29, 15, tzinfo=UTC)),
+        activity(carlos, 12, "strength", 0, datetime(2026, 9, 30, 15, tzinfo=UTC)),
+        activity(ana, 13, "strength", 0, datetime(2026, 9, 29, 15, tzinfo=UTC)),
     ])
     db.commit()
 
     board = rankings(db, "week", datetime(2026, 9, 30, 18, tzinfo=UTC))
 
-    assert [(row["name"], row["activity_count"]) for row in board["gym"]] == [("Carlos Runner", 2), ("Ana Runner", 1)]
+    assert [(row["name"], row["activity_count"]) for row in board["strength"]] == [("Carlos Runner", 2), ("Ana Runner", 1)]
 
 
 def test_last_month_and_team_discipline_highlights(db):
@@ -134,7 +134,7 @@ def test_athlete_discipline_totals_keep_each_sport_separate(db):
         carlos,
         activity(carlos, 11, "swim", 2_000, datetime(2026, 9, 29, 15, tzinfo=UTC)),
         activity(carlos, 12, "bike", 20_000, datetime(2026, 9, 29, 15, tzinfo=UTC)),
-        activity(carlos, 13, "gym", 0, datetime(2026, 9, 30, 15, tzinfo=UTC)),
+        activity(carlos, 13, "strength", 0, datetime(2026, 9, 30, 15, tzinfo=UTC)),
     ])
     db.commit()
 
@@ -143,7 +143,7 @@ def test_athlete_discipline_totals_keep_each_sport_separate(db):
     assert totals["swim"] == {"distance_m": 2_000, "activity_count": 1}
     assert totals["bike"] == {"distance_m": 20_000, "activity_count": 1}
     assert totals["run"]["activity_count"] == 0
-    assert totals["gym"]["activity_count"] == 1
+    assert totals["strength"]["activity_count"] == 1
 
 
 def test_open_water_is_kept_separate_from_pool_swimming(db):

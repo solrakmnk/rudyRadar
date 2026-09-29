@@ -18,7 +18,8 @@ def normalize_sport(value: str | None, workout_type: int | None = None) -> str |
     if s == "Swim": return "swim"
     if s in {"Ride", "MountainBikeRide", "GravelRide"}: return "bike"
     if s in {"Run", "TrailRun"}: return "run"
-    if s in {"WeightTraining", "Workout"}: return "gym"
+    if s in {"WeightTraining", "Crossfit", "HighIntensityIntervalTraining"}: return "strength"
+    if s in {"Yoga", "Pilates", "Workout", "PhysicalTherapy"}: return "wellbeing"
     if get_settings().include_virtual_activities and s == "VirtualRide": return "bike"
     if get_settings().include_virtual_activities and s == "VirtualRun": return "run"
     return None

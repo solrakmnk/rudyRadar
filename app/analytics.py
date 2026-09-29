@@ -59,7 +59,7 @@ def athlete_discipline_stats(db: Session, athlete_id: int, kind: str, now: datet
         )
     ).all()
     result: dict[str, dict[str, float | int]] = {
-        sport: {"distance_m": 0.0, "activity_count": 0} for sport in ("swim", "open_water", "bike", "run", "gym")
+        sport: {"distance_m": 0.0, "activity_count": 0} for sport in ("swim", "open_water", "bike", "run", "strength", "wellbeing")
     }
     for activity in activities:
         if activity.normalized_sport in result:
@@ -77,7 +77,7 @@ def rankings(db: Session, kind: str, now: datetime | None = None) -> dict[str, l
             Activity.normalized_sport.is_not(None),
         )
     ).all()
-    result: dict[str, list[dict[str, str | float | int]]] = {sport: [] for sport in ("swim", "open_water", "bike", "run", "gym")}
+    result: dict[str, list[dict[str, str | float | int]]] = {sport: [] for sport in ("swim", "open_water", "bike", "run", "strength", "wellbeing")}
     totals: dict[tuple[str, int], float] = {}
     counts: dict[tuple[str, int], int] = {}
     for activity in activities:
@@ -88,7 +88,7 @@ def rankings(db: Session, kind: str, now: datetime | None = None) -> dict[str, l
     for (sport, athlete_id), distance in totals.items():
         result[sport].append({"name": names[athlete_id], "distance_m": distance, "activity_count": counts[(sport, athlete_id)]})
     for sport in result:
-        metric = "activity_count" if sport == "gym" else "distance_m"
+        metric = "activity_count" if sport in {"strength", "wellbeing"} else "distance_m"
         result[sport].sort(key=lambda row: row[metric], reverse=True)
         result[sport] = result[sport][:3]
     return result
