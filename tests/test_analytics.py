@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from app.analytics import activity_highlights, athlete_period_stats, monthly_comparison, rankings, team_highlights, weekly_comparison
+from app.analytics import activity_highlights, athlete_period_stats, monthly_comparison, rankings, team_highlights, team_sport_highlights, weekly_comparison
 from app.models import Activity, Athlete
 
 
@@ -109,3 +109,20 @@ def test_gym_ranking_is_sorted_by_sessions(db):
     board = rankings(db, "week", datetime(2026, 9, 30, 18, tzinfo=UTC))
 
     assert [(row["name"], row["activity_count"]) for row in board["gym"]] == [("Carlos Runner", 2), ("Ana Runner", 1)]
+
+
+def test_last_month_and_team_discipline_highlights(db):
+    carlos = athlete(1, "Carlos")
+    db.add_all([
+        carlos,
+        activity(carlos, 11, "bike", 20_000, datetime(2026, 8, 25, 15, tzinfo=UTC)),
+        activity(carlos, 12, "run", 8_000, datetime(2026, 8, 26, 15, tzinfo=UTC)),
+    ])
+    db.commit()
+
+    stats = athlete_period_stats(db, carlos.id, "last_month", datetime(2026, 9, 30, tzinfo=UTC))
+    highlights = team_sport_highlights(db, datetime(2026, 9, 30, tzinfo=UTC), "last_month")
+
+    assert stats["distance_m"] == 28_000
+    assert highlights["bike"]["distance_m"] == 20_000
+    assert highlights["run"]["day"] == "weekday_2"
