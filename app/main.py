@@ -15,14 +15,34 @@ from app.models import Activity, Athlete
 from app.analytics import athlete_period_stats, rankings
 from app.services import Crypto, StravaClient, StravaError, get_valid_access_token, is_club_member
 from app.sync import sync_activities, upsert_activity
+from app.i18n import DEFAULT_LOCALE, SUPPORTED_LOCALES, preferred_locale, translate
 
-settings=get_settings(); app=FastAPI(title="Radar Rudy"); app.add_middleware(SessionMiddleware, secret_key=settings.session_secret, https_only=settings.app_base_url.startswith("https://"), same_site="lax"); app.mount("/static",StaticFiles(directory="app/static"),name="static"); templates=Jinja2Templates(directory="app/templates")
+settings=get_settings(); app=FastAPI(title="Radar Rudo"); app.add_middleware(SessionMiddleware, secret_key=settings.session_secret, https_only=settings.app_base_url.startswith("https://"), same_site="lax"); app.mount("/static",StaticFiles(directory="app/static"),name="static")
+def template_context(request: Request):
+    locale = preferred_locale(request.query_params.get("lang"), request.session)
+    request.session["locale"] = locale
+    return {"locale": locale, "t": lambda key, **values: translate(locale, key, **values)}
+templates=Jinja2Templates(directory="app/templates", context_processors=[template_context])
 logger=logging.getLogger(__name__)
 
 @app.get("/health")
 def health(): return {"status":"ok"}
 @app.get("/",response_class=HTMLResponse)
 def index(request: Request): return templates.TemplateResponse(request,"index.html")
+@app.get("/language/{locale}")
+def language(request: Request, locale: str, next: str = "/"):
+    request.session["locale"] = locale if locale in SUPPORTED_LOCALES else DEFAULT_LOCALE
+    return RedirectResponse(next if next.startswith("/") and not next.startswith("//") else "/", status_code=303)
+@app.get("/privacy", response_class=HTMLResponse)
+def privacy(request: Request): return templates.TemplateResponse(request, "privacy.html")
+@app.post("/privacy/delete")
+def delete_my_data(request: Request, db: Session = Depends(get_db)):
+    athlete_id = request.session.get("athlete_id")
+    athlete = db.get(Athlete, athlete_id) if athlete_id else None
+    if athlete:
+        db.delete(athlete); db.commit()
+    request.session.clear()
+    return RedirectResponse("/?deleted=1", status_code=303)
 @app.get("/auth/strava")
 def auth(request:Request):
     state=secrets.token_urlsafe(32); request.session["oauth_state"]=state; return RedirectResponse(StravaClient().authorization_url(state))
@@ -59,7 +79,7 @@ def admin(request:Request,period:str="week",db:Session=Depends(get_db)):
     return templates.TemplateResponse(request,"admin.html",{"athletes":athletes,"rankings":rankings(db,period),"period":period,"active":active,"activity_count":activity_count,"distance_m":total})
 @app.get("/admin/report",response_class=PlainTextResponse,dependencies=[Depends(admin_ok)])
 def report(period:str="week",db:Session=Depends(get_db)):
-    r=rankings(db,period); medals=["🥇","🥈","🥉"]; labels={"swim":"🏊 NATACIÓN","bike":"🚴 BICI","run":"🏃 CARRERA"}; lines=["👀 RADAR RUDY",f"Rudy revisó los kilómetros de este {('mes' if period=='month' else 'semana')}..."]
+    r=rankings(db,period); medals=["🥇","🥈","🥉"]; labels={"swim":"🏊 NATACIÓN","bike":"🚴 BICI","run":"🏃 CARRERA"}; lines=["👀 RADAR RUDO",f"Rudy encontró las historias de este {('mes' if period=='month' else 'semana')}..."]
     for sport in ("swim","bike","run"):
         lines.extend(["",labels[sport]])
         if r[sport]: lines.extend(f"{medals[i]} {x['name']} — {x['distance_m']/1000:.1f} km" for i,x in enumerate(r[sport]))
@@ -70,11 +90,13 @@ def verify_webhook(hub_mode:str|None=None,hub_verify_token:str|None=None,hub_cha
     if hub_mode=="subscribe" and settings.webhook_verify_token and hmac.compare_digest(hub_verify_token or "",settings.webhook_verify_token): return {"hub.challenge":hub_challenge}
     raise HTTPException(403)
 def process_webhook(payload: dict):
-    if payload.get("object_type") != "activity": return
     db=next(get_db())
     try:
         athlete=db.scalar(select(Athlete).where(Athlete.strava_athlete_id==payload.get("owner_id"),Athlete.is_active.is_(True)))
         if not athlete: return
+        if payload.get("object_type") == "athlete" and payload.get("updates", {}).get("authorized") == "false":
+            db.delete(athlete); db.commit(); return
+        if payload.get("object_type") != "activity": return
         activity_id=payload.get("object_id")
         if payload.get("aspect_type")=="delete":
             activity=db.scalar(select(Activity).where(Activity.strava_activity_id==activity_id))

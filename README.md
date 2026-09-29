@@ -1,6 +1,6 @@
-# Radar Rudy
+# Radar Rudo
 
-Radar Rudy es el tablero privado de RUD@S. Usa FastAPI, PostgreSQL y Strava OAuth para verificar miembros y, cuando `STRAVA_SYNC_ENABLED=true`, sincronizar las actividades autorizadas.
+Radar Rudo es el tablero privado de RUD@S. Rudy es el asistente que encuentra las historias en los entrenamientos. Usa FastAPI, PostgreSQL y Strava OAuth para verificar miembros y, cuando `STRAVA_SYNC_ENABLED=true`, sincronizar las actividades autorizadas.
 
 ## Requisitos
 
