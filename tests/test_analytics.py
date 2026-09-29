@@ -1,0 +1,75 @@
+from datetime import UTC, datetime
+
+import pytest
+
+from app.analytics import athlete_period_stats, monthly_comparison, rankings
+from app.models import Activity, Athlete
+
+
+def athlete(strava_id: int, name: str) -> Athlete:
+    return Athlete(strava_athlete_id=strava_id, firstname=name, lastname="Runner")
+
+
+def activity(athlete: Athlete, strava_id: int, sport: str, distance: float, date: datetime) -> Activity:
+    return Activity(
+        athlete=athlete,
+        strava_activity_id=strava_id,
+        name="Entreno",
+        sport_type=sport.title(),
+        normalized_sport=sport,
+        start_date=date,
+        distance_m=distance,
+        moving_time_s=3600,
+        elapsed_time_s=3600,
+        total_elevation_gain_m=100,
+    )
+
+
+def test_stats_only_include_the_requested_week(db):
+    carlos = athlete(1, "Carlos")
+    db.add_all([
+        carlos,
+        activity(carlos, 11, "run", 5_000, datetime(2026, 9, 29, 15, tzinfo=UTC)),
+        activity(carlos, 12, "run", 9_000, datetime(2026, 9, 20, 15, tzinfo=UTC)),
+    ])
+    db.commit()
+
+    stats = athlete_period_stats(db, carlos.id, "week", datetime(2026, 9, 30, 12, tzinfo=UTC))
+
+    assert stats["distance_m"] == 5_000
+    assert stats["activity_count"] == 1
+    assert stats["active_days"] == 1
+
+
+def test_rankings_are_grouped_by_sport_and_sorted(db):
+    carlos, ana = athlete(1, "Carlos"), athlete(2, "Ana")
+    db.add_all([
+        carlos,
+        ana,
+        activity(carlos, 11, "run", 5_000, datetime(2026, 9, 29, 15, tzinfo=UTC)),
+        activity(carlos, 12, "run", 3_000, datetime(2026, 9, 30, 15, tzinfo=UTC)),
+        activity(ana, 13, "run", 10_000, datetime(2026, 9, 30, 15, tzinfo=UTC)),
+        activity(ana, 14, "bike", 25_000, datetime(2026, 9, 29, 15, tzinfo=UTC)),
+    ])
+    db.commit()
+
+    board = rankings(db, "week", datetime(2026, 9, 30, 18, tzinfo=UTC))
+
+    assert [(row["name"], row["distance_m"]) for row in board["run"]] == [
+        ("Ana Runner", 10_000),
+        ("Carlos Runner", 8_000),
+    ]
+    assert board["bike"][0]["distance_m"] == 25_000
+    assert board["swim"] == []
+
+
+def test_monthly_comparison_has_no_percentage_without_baseline(db):
+    carlos = athlete(1, "Carlos")
+    db.add_all([carlos, activity(carlos, 11, "bike", 42_000, datetime(2026, 9, 2, 15, tzinfo=UTC))])
+    db.commit()
+
+    comparison = monthly_comparison(db, carlos.id, "bike", datetime(2026, 9, 30, tzinfo=UTC))
+
+    assert comparison["current_distance"] == 42_000
+    assert comparison["previous_distance"] == 0
+    assert comparison["percentage_change"] is None

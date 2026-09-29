@@ -1,6 +1,6 @@
 import json
 from app.database import SessionLocal
-from app.services import sync_all_active_athletes
+from app.sync import sync_all_active_athletes
 
 def main():
     db = SessionLocal()

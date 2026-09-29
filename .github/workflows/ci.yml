@@ -1,0 +1,48 @@
+name: Test and deploy
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: radar_rudy
+          POSTGRES_USER: radar_rudy
+          POSTGRES_PASSWORD: radar_rudy
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U radar_rudy -d radar_rudy"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql+psycopg://radar_rudy:radar_rudy@localhost:5432/radar_rudy
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install '.[dev]'
+      - run: python -m compileall app
+      - run: alembic upgrade head
+      - run: pytest -q
+
+  deploy:
+    needs: test
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy to Railway
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: npx -y @railway/cli@latest up --ci

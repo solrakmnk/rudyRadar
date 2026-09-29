@@ -29,7 +29,13 @@ Por defecto `STRAVA_SYNC_ENABLED=false`: OAuth y validación de club están impl
 
 Crea un servicio PostgreSQL y un servicio desde este repositorio usando el Dockerfile. Copia las variables de `.env.example`, reemplaza `DATABASE_URL` por la que entrega Railway y ajusta `APP_BASE_URL` y `STRAVA_REDIRECT_URI` a HTTPS. Ejecuta `alembic upgrade head` una vez desde el shell de Railway antes de habilitar tráfico.
 
-Configura un Cron Job de Railway cada 6 horas con `python -m app.cli`; sincroniza los atletas activos y evita depender exclusivamente de webhooks. Para sincronización cercana a tiempo real registra `https://<dominio>/webhooks/strava` como callback de Strava y define `WEBHOOK_VERIFY_TOKEN`. Los webhooks `create`, `update` y `delete` son idempotentes y la app consulta Strava para obtener la actividad completa antes de persistirla.
+El contenedor ejecuta `alembic upgrade head` antes de iniciar la aplicación, por lo que cada despliegue aplica las migraciones pendientes. Configura un Cron Job de Railway cada 6 horas con `python -m app.cli`; sincroniza los atletas activos y evita depender exclusivamente de webhooks. Para sincronización cercana a tiempo real registra `https://<dominio>/webhooks/strava` como callback de Strava y define `WEBHOOK_VERIFY_TOKEN`. Los webhooks `create`, `update` y `delete` son idempotentes y la app consulta Strava para obtener la actividad completa antes de persistirla.
+
+## Entrega continua
+
+El workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) compila el código, prueba contra PostgreSQL y aplica migraciones para cada pull request. Cuando se integra un cambio a `main`, después de pasar esas verificaciones ejecuta el despliegue en Railway.
+
+En Railway abre el proyecto, crea un **Project Token** para el entorno de producción y añádelo en GitHub como el secreto `RAILWAY_TOKEN` (`Settings` → `Secrets and variables` → `Actions`). Railway usa ese token acotado al proyecto para ejecutar `railway up --ci`; no guardes el token en `.env` ni en el repositorio. Consulta la [documentación de Railway](https://docs.railway.com/cli/deploying) para crear el token y comprobar los despliegues.
 
 ## Privacidad y desconexión
 

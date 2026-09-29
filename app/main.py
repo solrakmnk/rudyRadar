@@ -12,7 +12,9 @@ from starlette.middleware.sessions import SessionMiddleware
 from app.config import get_settings
 from app.database import get_db
 from app.models import Activity, Athlete
-from app.services import Crypto, StravaClient, StravaError, athlete_period_stats, get_valid_access_token, rankings, sync_activities, upsert_activity
+from app.analytics import athlete_period_stats, rankings
+from app.services import Crypto, StravaClient, StravaError, get_valid_access_token, is_club_member
+from app.sync import sync_activities, upsert_activity
 
 settings=get_settings(); app=FastAPI(title="Radar Rudy"); app.add_middleware(SessionMiddleware, secret_key=settings.session_secret, https_only=settings.app_base_url.startswith("https://"), same_site="lax"); app.mount("/static",StaticFiles(directory="app/static"),name="static"); templates=Jinja2Templates(directory="app/templates")
 logger=logging.getLogger(__name__)
@@ -32,7 +34,7 @@ def callback(request:Request, code:str|None=None, state:str|None=None, error:str
     try:
         client=StravaClient(); payload=client.exchange_code(code or ""); token=payload["access_token"]; clubs=client.clubs(token)
     except StravaError as e: return templates.TemplateResponse(request,"error.html",{"message":str(e)},status_code=502)
-    if not any(int(c.get("id", 0))==settings.strava_club_id for c in clubs): return templates.TemplateResponse(request,"not_member.html")
+    if not is_club_member(clubs): return templates.TemplateResponse(request,"not_member.html")
     source=payload["athlete"]; athlete=db.scalar(select(Athlete).where(Athlete.strava_athlete_id==source["id"]))
     if not athlete: athlete=Athlete(strava_athlete_id=source["id"],firstname=source.get("firstname","Rudy"),lastname=source.get("lastname","")); db.add(athlete)
     crypto=Crypto(); athlete.profile_url=source.get("profile"); athlete.access_token_encrypted=crypto.encrypt(token); athlete.refresh_token_encrypted=crypto.encrypt(payload["refresh_token"]); athlete.token_expires_at=datetime.fromtimestamp(payload["expires_at"],UTC); athlete.is_active=True; athlete.is_club_member=True; db.commit()
