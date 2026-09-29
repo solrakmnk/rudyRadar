@@ -13,7 +13,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from app.config import get_settings
 from app.database import get_db
 from app.models import Activity, Athlete
-from app.analytics import athlete_period_stats, rankings
+from app.analytics import activity_highlights, athlete_period_stats, rankings, weekly_comparison
 from app.services import Crypto, StravaClient, StravaError, get_valid_access_token, is_club_member
 from app.sync import sync_activities, upsert_activity
 from app.i18n import DEFAULT_LOCALE, SUPPORTED_LOCALES, preferred_locale, translate
@@ -44,6 +44,10 @@ def delete_my_data(request: Request, db: Session = Depends(get_db)):
     athlete_id = request.session.get("athlete_id")
     athlete = db.get(Athlete, athlete_id) if athlete_id else None
     if athlete:
+        try:
+            StravaClient().deauthorize(Crypto().decrypt(athlete.access_token_encrypted))
+        except Exception:
+            logger.warning("Could not revoke Strava authorization for athlete_id=%s", athlete.id)
         db.delete(athlete); db.commit()
     request.session.clear()
     return RedirectResponse("/?deleted=1", status_code=303)
@@ -72,7 +76,7 @@ def radar(request: Request, period: str="week", db: Session=Depends(get_db)):
     if not athlete or not athlete.is_active or not athlete.is_club_member: return RedirectResponse("/",status_code=303)
     if period not in {"week","month"}: period="week"
     count=request.session.pop("sync_count",None)
-    return templates.TemplateResponse(request,"radar.html",{"athlete":athlete,"period":period,"stats":athlete_period_stats(db,athlete.id,period),"rankings":rankings(db,period),"sync_count":count})
+    return templates.TemplateResponse(request,"radar.html",{"athlete":athlete,"period":period,"stats":athlete_period_stats(db,athlete.id,period),"rankings":rankings(db,period),"comparison":weekly_comparison(db,athlete.id),"highlights":activity_highlights(db,athlete.id),"sync_count":count})
 def admin_ok(request:Request):
     supplied=request.headers.get("x-admin-secret",""); auth=request.headers.get("authorization","")
     if auth.startswith("Bearer "): supplied=auth.removeprefix("Bearer ")

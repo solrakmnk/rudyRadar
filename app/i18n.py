@@ -21,8 +21,8 @@ MESSAGES: dict[str, dict[str, str]] = {
         "privacy_use_title": "Cómo los usamos", "privacy_use_text": "Los usamos para verificar tu pertenencia a RUD@S, sincronizar actividades y mostrar tu panel y rankings internos. No vendemos datos ni los usamos para publicidad.",
         "privacy_control_title": "Control y eliminación", "privacy_control_text": "Puedes revocar Radar Rudo desde Strava. También puedes borrar tu información desde el panel; al hacerlo se eliminan actividades y tokens locales. Los webhooks procesan la revocación de Strava.",
         "privacy_retention_title": "Conservación y contacto", "privacy_retention_text": "Conservamos los datos mientras mantengas autorizada la aplicación. Para solicitudes de privacidad contacta al administrador de RUD@S.",
-        "delete_data": "Borrar mis datos", "delete_confirm": "¿Eliminar tus actividades y tokens locales? Esta acción no se puede deshacer.",
-        "data_deleted": "Tus datos locales fueron eliminados.", "powered_by": "Compatible con Strava",
+        "delete_data": "Eliminar mi cuenta de Radar Rudo y mis datos", "delete_confirm": "Se eliminará tu cuenta de Radar Rudo, tus datos locales y la autorización de esta app. Tu cuenta y actividades de Strava no se borrarán. Para regresar deberás conectar Strava otra vez.",
+        "data_deleted": "Tu cuenta y datos de Radar Rudo fueron eliminados.", "powered_by": "Compatible con Strava",
     },
     "en": {
         "product": "Radar Rudo", "assistant": "Rudy finds the stories.", "connect": "Connect with Strava",
@@ -39,8 +39,8 @@ MESSAGES: dict[str, dict[str, str]] = {
         "privacy_use_title": "How we use it", "privacy_use_text": "We use it to verify RUD@S membership, sync activities, and show your dashboard and internal rankings. We do not sell data or use it for advertising.",
         "privacy_control_title": "Control and deletion", "privacy_control_text": "You can revoke Radar Rudo from Strava. You can also delete your information from the dashboard; this removes local activities and tokens. Webhooks process Strava revocation.",
         "privacy_retention_title": "Retention and contact", "privacy_retention_text": "We retain data while you authorize the application. Contact the RUD@S administrator for privacy requests.",
-        "delete_data": "Delete my data", "delete_confirm": "Delete your local activities and tokens? This cannot be undone.",
-        "data_deleted": "Your local data was deleted.", "powered_by": "Compatible with Strava",
+        "delete_data": "Delete my Radar Rudo account and data", "delete_confirm": "Your Radar Rudo account, local data, and this app authorization will be deleted. Your Strava account and activities will not be deleted. You will need to connect Strava again to return.",
+        "data_deleted": "Your Radar Rudo account and local data were deleted.", "powered_by": "Compatible with Strava",
     },
 }
 

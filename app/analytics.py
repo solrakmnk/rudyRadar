@@ -53,7 +53,7 @@ def rankings(db: Session, kind: str, now: datetime | None = None) -> dict[str, l
             Activity.normalized_sport.is_not(None),
         )
     ).all()
-    result: dict[str, list[dict[str, str | float]]] = {sport: [] for sport in ("swim", "bike", "run")}
+    result: dict[str, list[dict[str, str | float]]] = {sport: [] for sport in ("swim", "bike", "run", "gym")}
     totals: dict[tuple[str, int], float] = {}
     for activity in activities:
         key = (activity.normalized_sport, activity.athlete_id)
@@ -65,6 +65,35 @@ def rankings(db: Session, kind: str, now: datetime | None = None) -> dict[str, l
         result[sport].sort(key=lambda row: row["distance_m"], reverse=True)
         result[sport] = result[sport][:3]
     return result
+
+
+def weekly_comparison(db: Session, athlete_id: int, now: datetime | None = None) -> dict[str, float | int]:
+    current_start, current_end = period_bounds("week", now or datetime.now(UTC))
+    previous_start = current_start - timedelta(days=7)
+    activities = db.scalars(select(Activity).where(Activity.athlete_id == athlete_id)).all()
+    def totals(start: datetime, end: datetime) -> tuple[float, int]:
+        selected = [activity for activity in activities if start <= activity.start_date < end]
+        return sum(activity.distance_m for activity in selected), len(selected)
+    current_distance, current_count = totals(current_start, current_end)
+    previous_distance, previous_count = totals(previous_start, current_start)
+    return {"distance_m": current_distance, "distance_change_m": current_distance - previous_distance, "activity_count": current_count, "activity_change": current_count - previous_count}
+
+
+def activity_highlights(db: Session, athlete_id: int, now: datetime | None = None) -> dict[str, str | float | int | None]:
+    start, _ = period_bounds("week", now or datetime.now(UTC))
+    activities = db.scalars(select(Activity).where(Activity.athlete_id == athlete_id, Activity.start_date >= start)).all()
+    if not activities:
+        return {"longest_day": None, "longest_distance_m": 0, "busiest_day": None, "busiest_count": 0}
+    zone = ZoneInfo(get_settings().app_timezone)
+    distance_by_day: dict[str, float] = {}
+    count_by_day: dict[str, int] = {}
+    for activity in activities:
+        day = activity.start_date.astimezone(zone).strftime("%A")
+        distance_by_day[day] = distance_by_day.get(day, 0) + activity.distance_m
+        count_by_day[day] = count_by_day.get(day, 0) + 1
+    longest_day, longest_distance = max(distance_by_day.items(), key=lambda row: row[1])
+    busiest_day, busiest_count = max(count_by_day.items(), key=lambda row: row[1])
+    return {"longest_day": longest_day, "longest_distance_m": longest_distance, "busiest_day": busiest_day, "busiest_count": busiest_count}
 
 
 def monthly_comparison(db: Session, athlete_id: int, sport: str, now: datetime | None = None) -> dict[str, float | None]:
