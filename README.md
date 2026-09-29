@@ -33,7 +33,7 @@ El contenedor ejecuta `alembic upgrade head` antes de iniciar la aplicación, po
 
 ## Entrega continua
 
-El workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) compila el código, prueba contra PostgreSQL y aplica migraciones para cada pull request. Cuando se integra un cambio a `main`, después de pasar esas verificaciones ejecuta el despliegue en Railway.
+El workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) compila el código, prueba contra PostgreSQL y aplica migraciones para cada pull request. Cuando se integra un cambio a `master`, después de pasar esas verificaciones ejecuta el despliegue en Railway.
 
 En Railway abre el proyecto, crea un **Project Token** para el entorno de producción y añádelo en GitHub como el secreto `RAILWAY_TOKEN` (`Settings` → `Secrets and variables` → `Actions`). Railway usa ese token acotado al proyecto para ejecutar `railway up --ci`; no guardes el token en `.env` ni en el repositorio. Consulta la [documentación de Railway](https://docs.railway.com/cli/deploying) para crear el token y comprobar los despliegues.
 
