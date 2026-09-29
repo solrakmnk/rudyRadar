@@ -37,6 +37,11 @@ El workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) compila el c�
 
 En Railway abre el proyecto, crea un **Project Token** para el entorno de producción y añádelo en GitHub como el secreto `RAILWAY_TOKEN` (`Settings` → `Secrets and variables` → `Actions`). Railway usa ese token acotado al proyecto para ejecutar `railway up --ci`; no guardes el token en `.env` ni en el repositorio. Consulta la [documentación de Railway](https://docs.railway.com/cli/deploying) para crear el token y comprobar los despliegues.
 
+## Pendientes de producción
+
+- Conectar un dominio propio corto para Rudo Radar. El dominio generado por Railway incluye el nombre del entorno (`rudo-radar-production.up.railway.app`); un dominio propio, por ejemplo `rudo-radar.com`, permite una URL limpia.
+- Actualizar `APP_BASE_URL`, `STRAVA_REDIRECT_URI` y el callback de Strava cuando ese dominio esté verificado.
+
 ## Privacidad y desconexión
 
 La aplicación debe borrar actividades y tokens cuando un atleta revoca acceso o solicita eliminación. El endpoint de desautorización y el procesamiento completo de eventos webhook están preparados como siguiente fase; configura `WEBHOOK_VERIFY_TOKEN` para habilitar la verificación de suscripción.
