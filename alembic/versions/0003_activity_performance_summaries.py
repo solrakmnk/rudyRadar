@@ -2,7 +2,7 @@
 from alembic import op
 import sqlalchemy as sa
 
-revision = "0003_activity_performance_summaries"
+revision = "0003_perf_summaries"
 down_revision = "0002_strava_ids_bigint"
 branch_labels = None
 depends_on = None
