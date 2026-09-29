@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from app.analytics import activity_highlights, athlete_discipline_stats, athlete_period_stats, monthly_comparison, rankings, team_highlights, team_sport_highlights, weekly_comparison
+from app.analytics import activity_highlights, athlete_discipline_stats, athlete_period_stats, monthly_comparison, period_comparison, rankings, team_highlights, team_sport_highlights, weekly_comparison
 from app.models import Activity, Athlete
 
 
@@ -161,3 +161,31 @@ def test_open_water_is_kept_separate_from_pool_swimming(db):
     assert totals["swim"]["distance_m"] == 2_000
     assert totals["open_water"]["distance_m"] == 3_000
     assert board["open_water"][0]["distance_m"] == 3_000
+
+
+def test_last_week_comparison_uses_the_week_before_it(db):
+    carlos = athlete(1, "Carlos")
+    db.add_all([
+        carlos,
+        activity(carlos, 11, "run", 7_000, datetime(2026, 9, 22, 15, tzinfo=UTC)),
+        activity(carlos, 12, "run", 4_000, datetime(2026, 9, 15, 15, tzinfo=UTC)),
+    ])
+    db.commit()
+
+    comparison = period_comparison(db, carlos.id, "last_week", datetime(2026, 9, 30, tzinfo=UTC))
+
+    assert comparison["distance_m"] == 7_000
+    assert comparison["distance_change_m"] == 3_000
+
+
+def test_walk_and_hike_share_the_walk_ranking(db):
+    carlos = athlete(1, "Carlos")
+    db.add_all([
+        carlos,
+        activity(carlos, 11, "walk", 3_000, datetime(2026, 9, 29, 15, tzinfo=UTC)),
+        activity(carlos, 12, "walk", 5_000, datetime(2026, 9, 30, 15, tzinfo=UTC)),
+    ])
+    db.commit()
+
+    totals = athlete_discipline_stats(db, carlos.id, "week", datetime(2026, 9, 30, tzinfo=UTC))
+    assert totals["walk"] == {"distance_m": 8_000, "activity_count": 2}

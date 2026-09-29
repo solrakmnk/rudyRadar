@@ -17,6 +17,9 @@ def period_bounds(kind: str, now: datetime, timezone: str | None = None) -> tupl
     if kind == "week":
         start -= timedelta(days=start.weekday())
         end = start + timedelta(days=7)
+    elif kind == "last_week":
+        end = start - timedelta(days=start.weekday())
+        start = end - timedelta(days=7)
     elif kind == "month":
         start = start.replace(day=1)
         end = (start.replace(day=28) + timedelta(days=4)).replace(day=1)
@@ -59,7 +62,7 @@ def athlete_discipline_stats(db: Session, athlete_id: int, kind: str, now: datet
         )
     ).all()
     result: dict[str, dict[str, float | int]] = {
-        sport: {"distance_m": 0.0, "activity_count": 0} for sport in ("swim", "open_water", "bike", "run", "strength", "wellbeing")
+        sport: {"distance_m": 0.0, "activity_count": 0} for sport in ("swim", "open_water", "bike", "run", "walk", "strength", "wellbeing")
     }
     for activity in activities:
         if activity.normalized_sport in result:
@@ -77,7 +80,7 @@ def rankings(db: Session, kind: str, now: datetime | None = None) -> dict[str, l
             Activity.normalized_sport.is_not(None),
         )
     ).all()
-    result: dict[str, list[dict[str, str | float | int]]] = {sport: [] for sport in ("swim", "open_water", "bike", "run", "strength", "wellbeing")}
+    result: dict[str, list[dict[str, str | float | int]]] = {sport: [] for sport in ("swim", "open_water", "bike", "run", "walk", "strength", "wellbeing")}
     totals: dict[tuple[str, int], float] = {}
     counts: dict[tuple[str, int], int] = {}
     for activity in activities:
@@ -94,9 +97,12 @@ def rankings(db: Session, kind: str, now: datetime | None = None) -> dict[str, l
     return result
 
 
-def weekly_comparison(db: Session, athlete_id: int, now: datetime | None = None) -> dict[str, float | int]:
-    current_start, current_end = period_bounds("week", now or datetime.now(UTC))
-    previous_start = current_start - timedelta(days=7)
+def period_comparison(db: Session, athlete_id: int, kind: str, now: datetime | None = None) -> dict[str, float | int]:
+    current_start, current_end = period_bounds(kind, now or datetime.now(UTC))
+    if kind in {"week", "last_week"}:
+        previous_start = current_start - timedelta(days=7)
+    else:
+        previous_start = (current_start - timedelta(days=1)).replace(day=1)
     activities = db.scalars(select(Activity).where(Activity.athlete_id == athlete_id)).all()
     def totals(start: datetime, end: datetime) -> tuple[float, int]:
         selected = [activity for activity in activities if start <= activity.start_date < end]
@@ -104,6 +110,11 @@ def weekly_comparison(db: Session, athlete_id: int, now: datetime | None = None)
     current_distance, current_count = totals(current_start, current_end)
     previous_distance, previous_count = totals(previous_start, current_start)
     return {"distance_m": current_distance, "distance_change_m": current_distance - previous_distance, "activity_count": current_count, "activity_change": current_count - previous_count}
+
+
+def weekly_comparison(db: Session, athlete_id: int, now: datetime | None = None) -> dict[str, float | int]:
+    """Compatibility wrapper for the current-week pulse."""
+    return period_comparison(db, athlete_id, "week", now)
 
 
 def activity_highlights(db: Session, athlete_id: int, now: datetime | None = None, kind: str = "week") -> dict[str, str | float | int | None]:
@@ -145,13 +156,13 @@ def team_sport_highlights(db: Session, now: datetime | None = None, kind: str = 
     zone = ZoneInfo(get_settings().app_timezone)
     totals: dict[tuple[str, str], float] = {}
     for activity in activities:
-        if activity.normalized_sport not in {"swim", "bike", "run"}:
+        if activity.normalized_sport not in {"swim", "bike", "run", "walk"}:
             continue
         day = f"weekday_{activity.start_date.astimezone(zone).weekday()}"
         key = (activity.normalized_sport, day)
         totals[key] = totals.get(key, 0) + activity.distance_m
     result: dict[str, dict[str, str | float]] = {}
-    for sport in ("swim", "open_water", "bike", "run"):
+    for sport in ("swim", "open_water", "bike", "run", "walk"):
         candidates = [(day, distance) for (candidate_sport, day), distance in totals.items() if candidate_sport == sport]
         if candidates:
             day, distance = max(candidates, key=lambda item: item[1])
