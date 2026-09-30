@@ -62,13 +62,38 @@ def athlete_discipline_stats(db: Session, athlete_id: int, kind: str, now: datet
         )
     ).all()
     result: dict[str, dict[str, float | int]] = {
-        sport: {"distance_m": 0.0, "activity_count": 0} for sport in ("swim", "open_water", "bike", "run", "walk", "strength", "wellbeing")
+        sport: {"distance_m": 0.0, "moving_time_s": 0, "activity_count": 0} for sport in ("swim", "open_water", "bike", "run", "walk", "strength", "wellbeing")
     }
     for activity in activities:
         if activity.normalized_sport in result:
             result[activity.normalized_sport]["distance_m"] += activity.distance_m
+            result[activity.normalized_sport]["moving_time_s"] += activity.moving_time_s
             result[activity.normalized_sport]["activity_count"] += 1
     return result
+
+
+def team_leaderboard(db: Session, kind: str, now: datetime | None = None) -> list[dict[str, str | int | float]]:
+    """Rank verified members by active time, with comparable sport contributions."""
+    start, end = period_bounds(kind, now or datetime.now(UTC))
+    activities = db.scalars(select(Activity).where(Activity.start_date >= start, Activity.start_date < end)).all()
+    athletes = {athlete.id: athlete for athlete in db.scalars(select(Athlete).where(Athlete.is_active.is_(True), Athlete.is_club_member.is_(True))).all()}
+    rows: dict[int, dict[str, str | int | float]] = {}
+    for activity in activities:
+        if activity.athlete_id not in athletes:
+            continue
+        athlete = athletes[activity.athlete_id]
+        row = rows.setdefault(activity.athlete_id, {"name": f"{athlete.firstname} {athlete.lastname}".strip(), "moving_time_s": 0, "activity_count": 0, "swim_time_s": 0, "bike_distance_m": 0.0, "run_distance_m": 0.0, "strength_sessions": 0})
+        row["moving_time_s"] += activity.moving_time_s
+        row["activity_count"] += 1
+        if activity.normalized_sport in {"swim", "open_water"}:
+            row["swim_time_s"] += activity.moving_time_s
+        elif activity.normalized_sport == "bike":
+            row["bike_distance_m"] += activity.distance_m
+        elif activity.normalized_sport == "run":
+            row["run_distance_m"] += activity.distance_m
+        elif activity.normalized_sport == "strength":
+            row["strength_sessions"] += 1
+    return sorted(rows.values(), key=lambda row: row["moving_time_s"], reverse=True)
 
 
 def rankings(db: Session, kind: str, now: datetime | None = None) -> dict[str, list[dict[str, str | float | int]]]:

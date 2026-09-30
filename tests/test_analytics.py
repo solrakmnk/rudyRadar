@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from app.analytics import activity_highlights, athlete_discipline_stats, athlete_period_stats, monthly_comparison, period_comparison, rankings, team_highlights, team_sport_highlights, weekly_comparison
+from app.analytics import activity_highlights, athlete_discipline_stats, athlete_period_stats, monthly_comparison, period_comparison, rankings, team_highlights, team_leaderboard, team_sport_highlights, weekly_comparison
 from app.models import Activity, Athlete
 
 
@@ -140,8 +140,8 @@ def test_athlete_discipline_totals_keep_each_sport_separate(db):
 
     totals = athlete_discipline_stats(db, carlos.id, "week", datetime(2026, 9, 30, tzinfo=UTC))
 
-    assert totals["swim"] == {"distance_m": 2_000, "activity_count": 1}
-    assert totals["bike"] == {"distance_m": 20_000, "activity_count": 1}
+    assert totals["swim"]["distance_m"] == 2_000 and totals["swim"]["moving_time_s"] == 3600
+    assert totals["bike"]["distance_m"] == 20_000 and totals["bike"]["activity_count"] == 1
     assert totals["run"]["activity_count"] == 0
     assert totals["strength"]["activity_count"] == 1
 
@@ -188,4 +188,19 @@ def test_walk_and_hike_share_the_walk_ranking(db):
     db.commit()
 
     totals = athlete_discipline_stats(db, carlos.id, "week", datetime(2026, 9, 30, tzinfo=UTC))
-    assert totals["walk"] == {"distance_m": 8_000, "activity_count": 2}
+    assert totals["walk"]["distance_m"] == 8_000 and totals["walk"]["activity_count"] == 2
+
+
+def test_team_leaderboard_ranks_by_active_time_and_keeps_sport_metrics(db):
+    carlos, ana = athlete(1, "Carlos"), athlete(2, "Ana")
+    db.add_all([
+        carlos, ana,
+        activity(carlos, 11, "bike", 20_000, datetime(2026, 9, 29, 15, tzinfo=UTC)),
+        activity(ana, 12, "run", 8_000, datetime(2026, 9, 29, 15, tzinfo=UTC)),
+        activity(ana, 13, "swim", 2_000, datetime(2026, 9, 30, 15, tzinfo=UTC)),
+    ])
+    db.commit()
+    board = team_leaderboard(db, "week", datetime(2026, 9, 30, tzinfo=UTC))
+    assert board[0]["name"] == "Ana Runner"
+    assert board[0]["run_distance_m"] == 8_000
+    assert board[1]["bike_distance_m"] == 20_000
