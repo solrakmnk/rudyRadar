@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from app.analytics import activity_highlights, athlete_discipline_stats, athlete_period_stats, monthly_comparison, period_comparison, rankings, team_highlights, team_leaderboard, team_sport_highlights, weekly_comparison
+from app.analytics import activity_highlights, athlete_discipline_stats, athlete_period_stats, monthly_comparison, period_comparison, rankings, team_group_stats, team_highlights, team_leaderboard, team_overview, team_sport_highlights, weekly_comparison
 from app.models import Activity, Athlete
 
 
@@ -204,3 +204,13 @@ def test_team_leaderboard_ranks_by_active_time_and_keeps_sport_metrics(db):
     assert board[0]["name"] == "Ana Runner"
     assert board[0]["run_distance_m"] == 8_000
     assert board[1]["bike_distance_m"] == 20_000
+
+
+def test_team_overview_and_group_stats_count_registered_members(db):
+    carlos, ana = athlete(1, "Carlos"), athlete(2, "Ana")
+    db.add_all([carlos, ana, activity(carlos, 11, "strength", 0, datetime(2026, 9, 29, 15, tzinfo=UTC))])
+    db.commit()
+    now = datetime(2026, 9, 30, tzinfo=UTC)
+    overview, groups = team_overview(db, "week", now), team_group_stats(db, "week", now)
+    assert overview == {"registered": 2, "participants": 1, "activities": 1}
+    assert groups["strength"] == {"participants": 1, "activities": 1}

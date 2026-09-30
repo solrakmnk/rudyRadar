@@ -175,6 +175,27 @@ def team_highlights(db: Session, now: datetime | None = None, kind: str = "week"
     return {"day": day, "participants": len(athlete_ids)}
 
 
+def team_overview(db: Session, kind: str, now: datetime | None = None) -> dict[str, int]:
+    """Return registered and active RUD@S participation for a reporting period."""
+    start, end = period_bounds(kind, now or datetime.now(UTC))
+    registered = db.scalars(select(Athlete).where(Athlete.is_active.is_(True), Athlete.is_club_member.is_(True))).all()
+    activities = db.scalars(select(Activity).where(Activity.start_date >= start, Activity.start_date < end)).all()
+    registered_ids = {athlete.id for athlete in registered}
+    current = [activity for activity in activities if activity.athlete_id in registered_ids]
+    return {"registered": len(registered), "participants": len({activity.athlete_id for activity in current}), "activities": len(current)}
+
+
+def team_group_stats(db: Session, kind: str, now: datetime | None = None) -> dict[str, dict[str, int]]:
+    """Count members and activities for non-distance groups such as strength."""
+    start, end = period_bounds(kind, now or datetime.now(UTC))
+    activities = db.scalars(select(Activity).where(Activity.start_date >= start, Activity.start_date < end)).all()
+    result = {sport: {"participants": 0, "activities": 0} for sport in ("strength", "wellbeing")}
+    for sport in result:
+        matching = [activity for activity in activities if activity.normalized_sport == sport]
+        result[sport] = {"participants": len({activity.athlete_id for activity in matching}), "activities": len(matching)}
+    return result
+
+
 def team_sport_highlights(db: Session, now: datetime | None = None, kind: str = "week") -> dict[str, dict[str, str | float]]:
     """Return each discipline's biggest club distance day in the selected period."""
     start, end = period_bounds(kind, now or datetime.now(UTC))
