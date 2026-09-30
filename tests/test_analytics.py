@@ -212,5 +212,5 @@ def test_team_overview_and_group_stats_count_registered_members(db):
     db.commit()
     now = datetime(2026, 9, 30, tzinfo=UTC)
     overview, groups = team_overview(db, "week", now), team_group_stats(db, "week", now)
-    assert overview == {"registered": 2, "participants": 1, "activities": 1}
+    assert overview == {"registered": 2, "participants": 1, "activities": 1, "distance_m": 0, "moving_time_s": 3600}
     assert groups["strength"] == {"participants": 1, "activities": 1}

@@ -26,6 +26,9 @@ def period_bounds(kind: str, now: datetime, timezone: str | None = None) -> tupl
     elif kind == "last_month":
         end = start.replace(day=1)
         start = (end - timedelta(days=1)).replace(day=1)
+    elif kind == "two_months_ago":
+        end = (start.replace(day=1) - timedelta(days=1)).replace(day=1)
+        start = (end - timedelta(days=1)).replace(day=1)
     else:
         raise ValueError("Unknown period")
     return start.astimezone(UTC), end.astimezone(UTC)
@@ -182,7 +185,7 @@ def team_overview(db: Session, kind: str, now: datetime | None = None) -> dict[s
     activities = db.scalars(select(Activity).where(Activity.start_date >= start, Activity.start_date < end)).all()
     registered_ids = {athlete.id for athlete in registered}
     current = [activity for activity in activities if activity.athlete_id in registered_ids]
-    return {"registered": len(registered), "participants": len({activity.athlete_id for activity in current}), "activities": len(current)}
+    return {"registered": len(registered), "participants": len({activity.athlete_id for activity in current}), "activities": len(current), "distance_m": sum(activity.distance_m for activity in current), "moving_time_s": sum(activity.moving_time_s for activity in current)}
 
 
 def team_group_stats(db: Session, kind: str, now: datetime | None = None) -> dict[str, dict[str, int]]:
@@ -203,7 +206,7 @@ def team_sport_highlights(db: Session, now: datetime | None = None, kind: str = 
     zone = ZoneInfo(get_settings().app_timezone)
     totals: dict[tuple[str, str], float] = {}
     for activity in activities:
-        if activity.normalized_sport not in {"swim", "bike", "run", "walk"}:
+        if activity.normalized_sport not in {"swim", "open_water", "bike", "run", "walk"}:
             continue
         day = f"weekday_{activity.start_date.astimezone(zone).weekday()}"
         key = (activity.normalized_sport, day)

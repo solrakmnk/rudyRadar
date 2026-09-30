@@ -79,7 +79,7 @@ def radar(request: Request, period: str="week", db: Session=Depends(get_db)):
     athlete_id=request.session.get("athlete_id")
     athlete=db.get(Athlete, athlete_id) if athlete_id else None
     if not athlete or not athlete.is_active or not athlete.is_club_member: return RedirectResponse("/",status_code=303)
-    if period not in {"week","last_week","month","last_month"}: period="week"
+    if period not in {"week","last_week","month","last_month","two_months_ago"}: period="week"
     count=request.session.pop("sync_count",None)
     return templates.TemplateResponse(request,"radar.html",{"athlete":athlete,"period":period,"stats":athlete_period_stats(db,athlete.id,period),"discipline_stats":athlete_discipline_stats(db,athlete.id,period),"rankings":rankings(db,period),"leaderboard":team_leaderboard(db,period),"comparison":period_comparison(db,athlete.id,period),"highlights":activity_highlights(db,athlete.id,kind=period),"team_highlights":team_highlights(db,kind=period),"team_overview":team_overview(db,period),"team_groups":team_group_stats(db,period),"sport_highlights":team_sport_highlights(db,kind=period),"sync_count":count})
 def admin_ok(request:Request):
