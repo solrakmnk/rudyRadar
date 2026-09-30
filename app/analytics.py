@@ -83,7 +83,7 @@ def team_leaderboard(db: Session, kind: str, now: datetime | None = None) -> lis
         if activity.athlete_id not in athletes:
             continue
         athlete = athletes[activity.athlete_id]
-        row = rows.setdefault(activity.athlete_id, {"name": f"{athlete.firstname} {athlete.lastname}".strip(), "moving_time_s": 0, "activity_count": 0, "swim_time_s": 0, "bike_distance_m": 0.0, "run_distance_m": 0.0, "strength_sessions": 0})
+        row = rows.setdefault(activity.athlete_id, {"name": f"{athlete.firstname} {athlete.lastname}".strip(), "profile_url": athlete.profile_url or "", "moving_time_s": 0, "activity_count": 0, "swim_time_s": 0, "bike_distance_m": 0.0, "run_distance_m": 0.0, "strength_sessions": 0})
         row["moving_time_s"] += activity.moving_time_s
         row["activity_count"] += 1
         if activity.normalized_sport in {"swim", "open_water"}:
