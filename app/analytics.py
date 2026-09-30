@@ -62,12 +62,13 @@ def athlete_discipline_stats(db: Session, athlete_id: int, kind: str, now: datet
         )
     ).all()
     result: dict[str, dict[str, float | int]] = {
-        sport: {"distance_m": 0.0, "moving_time_s": 0, "activity_count": 0} for sport in ("swim", "open_water", "bike", "run", "walk", "strength", "wellbeing")
+        sport: {"distance_m": 0.0, "moving_time_s": 0, "elevation_m": 0.0, "activity_count": 0} for sport in ("swim", "open_water", "bike", "run", "walk", "strength", "wellbeing")
     }
     for activity in activities:
         if activity.normalized_sport in result:
             result[activity.normalized_sport]["distance_m"] += activity.distance_m
             result[activity.normalized_sport]["moving_time_s"] += activity.moving_time_s
+            result[activity.normalized_sport]["elevation_m"] += activity.total_elevation_gain_m
             result[activity.normalized_sport]["activity_count"] += 1
     return result
 
