@@ -146,7 +146,7 @@ def test_athlete_discipline_totals_keep_each_sport_separate(db):
     assert totals["strength"]["activity_count"] == 1
 
 
-def test_open_water_is_kept_separate_from_pool_swimming(db):
+def test_open_water_and_pool_swimming_are_combined_on_dashboard(db):
     carlos = athlete(1, "Carlos")
     db.add_all([
         carlos,
@@ -158,9 +158,12 @@ def test_open_water_is_kept_separate_from_pool_swimming(db):
     totals = athlete_discipline_stats(db, carlos.id, "week", datetime(2026, 9, 30, tzinfo=UTC))
     board = rankings(db, "week", datetime(2026, 9, 30, tzinfo=UTC))
 
-    assert totals["swim"]["distance_m"] == 2_000
-    assert totals["open_water"]["distance_m"] == 3_000
-    assert board["open_water"][0]["distance_m"] == 3_000
+    assert totals["swim"]["distance_m"] == 5_000
+    assert totals["swim"]["activity_count"] == 2
+    assert "open_water" not in totals
+    assert board["swim"][0]["distance_m"] == 5_000
+    assert board["swim"][0]["activity_count"] == 2
+    assert "open_water" not in board
 
 
 def test_last_week_comparison_uses_the_week_before_it(db):

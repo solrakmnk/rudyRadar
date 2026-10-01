@@ -84,12 +84,12 @@ def callback(request:Request, code:str|None=None, state:str|None=None, error:str
     request.session["athlete_id"] = athlete.id; request.session["sync_count"] = count
     return RedirectResponse("/radar", status_code=303)
 @app.get("/radar",response_class=HTMLResponse)
-def radar(request: Request, period: str="week", db: Session=Depends(get_db)):
+def radar(request: Request, period: str="week", sport: str|None=None, db: Session=Depends(get_db)):
     athlete_id=request.session.get("athlete_id")
     athlete=db.get(Athlete, athlete_id) if athlete_id else None
     if not athlete or not athlete.is_active or not athlete.is_club_member: return RedirectResponse("/",status_code=303)
     if period not in {"week","last_week","month","last_month","two_months_ago"}: period="week"
-    count=request.session.pop("sync_count",None); discipline_stats=athlete_discipline_stats(db,athlete.id,period); default_sport=max(discipline_stats,key=lambda sport:discipline_stats[sport]["activity_count"])
+    count=request.session.pop("sync_count",None); discipline_stats=athlete_discipline_stats(db,athlete.id,period); requested_sport="swim" if sport=="open_water" else sport; default_sport=requested_sport if requested_sport in discipline_stats else max(discipline_stats,key=lambda item:discipline_stats[item]["activity_count"])
     return templates.TemplateResponse(request,"radar.html",{"athlete":athlete,"period":period,"stats":athlete_period_stats(db,athlete.id,period),"discipline_stats":discipline_stats,"discipline_comparisons":athlete_discipline_comparisons(db,athlete.id,period),"discipline_boards":discipline_leaderboards(db,period),"discipline_types":discipline_type_breakdown(db,athlete.id,period),"default_sport":default_sport,"rankings":rankings(db,period),"leaderboard":team_leaderboard(db,period),"comparison":period_comparison(db,athlete.id,period),"highlights":activity_highlights(db,athlete.id,kind=period),"team_highlights":team_highlights(db,kind=period),"team_overview":team_overview(db,period),"team_groups":team_group_stats(db,period),"sport_highlights":team_sport_highlights(db,kind=period),"sync_count":count})
 def admin_ok(request:Request):
     supplied=request.headers.get("x-admin-secret",""); auth=request.headers.get("authorization","")

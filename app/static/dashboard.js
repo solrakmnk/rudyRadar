@@ -31,6 +31,14 @@ document.addEventListener("DOMContentLoaded", () => {
       item.setAttribute("aria-selected", String(selected));
     });
     document.querySelectorAll("[data-sport-panel]").forEach((panel) => panel.hidden = panel.dataset.sportPanel !== sport);
+    document.querySelectorAll("[data-period-link]").forEach((link) => {
+      const url = new URL(link.href);
+      url.searchParams.set("sport", sport);
+      link.href = url.pathname + url.search;
+    });
+    const currentUrl = new URL(window.location.href);
+    currentUrl.searchParams.set("sport", sport);
+    window.history.replaceState({}, "", currentUrl.pathname + currentUrl.search);
   }));
 
   document.querySelectorAll("[data-comparison-chart]").forEach((chart) => renderComparison(chart, chart.dataset.defaultMetric));

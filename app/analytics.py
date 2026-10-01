@@ -9,7 +9,12 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.models import Activity, Athlete
 
-SPORTS = ("swim", "open_water", "bike", "run", "walk", "strength", "wellbeing")
+SPORTS = ("swim", "bike", "run", "walk", "strength", "wellbeing")
+
+
+def dashboard_sport(sport: str | None) -> str | None:
+    """Combine pool and open-water swimming in the public dashboard."""
+    return "swim" if sport == "open_water" else sport
 
 
 def period_bounds(kind: str, now: datetime, timezone: str | None = None) -> tuple[datetime, datetime]:
@@ -70,11 +75,12 @@ def athlete_discipline_stats(db: Session, athlete_id: int, kind: str, now: datet
         sport: {"distance_m": 0.0, "moving_time_s": 0, "elevation_m": 0.0, "activity_count": 0} for sport in SPORTS
     }
     for activity in activities:
-        if activity.normalized_sport in result:
-            result[activity.normalized_sport]["distance_m"] += activity.distance_m
-            result[activity.normalized_sport]["moving_time_s"] += activity.moving_time_s
-            result[activity.normalized_sport]["elevation_m"] += activity.total_elevation_gain_m
-            result[activity.normalized_sport]["activity_count"] += 1
+        sport = dashboard_sport(activity.normalized_sport)
+        if sport in result:
+            result[sport]["distance_m"] += activity.distance_m
+            result[sport]["moving_time_s"] += activity.moving_time_s
+            result[sport]["elevation_m"] += activity.total_elevation_gain_m
+            result[sport]["activity_count"] += 1
     return result
 
 
@@ -99,8 +105,8 @@ def athlete_discipline_comparisons(db: Session, athlete_id: int, kind: str, now:
 
     result = {}
     for sport in SPORTS:
-        current = summary([item for item in activities if item.normalized_sport == sport and current_start <= item.start_date < current_end])
-        previous = summary([item for item in activities if item.normalized_sport == sport and previous_start <= item.start_date < previous_end])
+        current = summary([item for item in activities if dashboard_sport(item.normalized_sport) == sport and current_start <= item.start_date < current_end])
+        previous = summary([item for item in activities if dashboard_sport(item.normalized_sport) == sport and previous_start <= item.start_date < previous_end])
         result[sport] = {"current": current, "previous": previous}
     return result
 
@@ -113,9 +119,10 @@ def discipline_leaderboards(db: Session, kind: str, now: datetime | None = None)
     totals: dict[tuple[str, int], dict[str, str | int | float]] = {}
     for item in activities:
         athlete = athletes.get(item.athlete_id)
-        if not athlete or item.normalized_sport not in SPORTS:
+        sport = dashboard_sport(item.normalized_sport)
+        if not athlete or sport not in SPORTS:
             continue
-        key = (item.normalized_sport, item.athlete_id)
+        key = (sport, item.athlete_id)
         row = totals.setdefault(key, {"name": f"{athlete.firstname} {athlete.lastname}".strip(), "profile_url": athlete.profile_url or "", "distance_m": 0.0, "moving_time_s": 0, "activity_count": 0})
         row["distance_m"] += item.distance_m
         row["moving_time_s"] += item.moving_time_s
@@ -135,8 +142,9 @@ def discipline_type_breakdown(db: Session, athlete_id: int, kind: str, now: date
     activities = db.scalars(select(Activity).where(Activity.athlete_id == athlete_id, Activity.start_date >= start, Activity.start_date < end, Activity.normalized_sport.is_not(None))).all()
     counts: dict[tuple[str, str], int] = {}
     for item in activities:
-        if item.normalized_sport in SPORTS:
-            key = (item.normalized_sport, item.sport_type)
+        sport = dashboard_sport(item.normalized_sport)
+        if sport in SPORTS:
+            key = (sport, item.sport_type)
             counts[key] = counts.get(key, 0) + 1
     return {sport: [{"type": activity_type, "count": count} for (row_sport, activity_type), count in sorted(counts.items()) if row_sport == sport] for sport in SPORTS}
 
@@ -174,11 +182,11 @@ def rankings(db: Session, kind: str, now: datetime | None = None) -> dict[str, l
             Activity.normalized_sport.is_not(None),
         )
     ).all()
-    result: dict[str, list[dict[str, str | float | int]]] = {sport: [] for sport in ("swim", "open_water", "bike", "run", "walk", "strength", "wellbeing")}
+    result: dict[str, list[dict[str, str | float | int]]] = {sport: [] for sport in SPORTS}
     totals: dict[tuple[str, int], float] = {}
     counts: dict[tuple[str, int], int] = {}
     for activity in activities:
-        key = (activity.normalized_sport, activity.athlete_id)
+        key = (dashboard_sport(activity.normalized_sport), activity.athlete_id)
         totals[key] = totals.get(key, 0) + activity.distance_m
         counts[key] = counts.get(key, 0) + 1
     names = {athlete.id: f"{athlete.firstname} {athlete.lastname}".strip() for athlete in db.scalars(select(Athlete)).all()}
@@ -271,13 +279,14 @@ def team_sport_highlights(db: Session, now: datetime | None = None, kind: str = 
     zone = ZoneInfo(get_settings().app_timezone)
     totals: dict[tuple[str, str], float] = {}
     for activity in activities:
-        if activity.normalized_sport not in {"swim", "open_water", "bike", "run", "walk"}:
+        sport = dashboard_sport(activity.normalized_sport)
+        if sport not in {"swim", "bike", "run", "walk"}:
             continue
         day = f"weekday_{activity.start_date.astimezone(zone).weekday()}"
-        key = (activity.normalized_sport, day)
+        key = (sport, day)
         totals[key] = totals.get(key, 0) + activity.distance_m
     result: dict[str, dict[str, str | float]] = {}
-    for sport in ("swim", "open_water", "bike", "run", "walk"):
+    for sport in ("swim", "bike", "run", "walk"):
         candidates = [(day, distance) for (candidate_sport, day), distance in totals.items() if candidate_sport == sport]
         if candidates:
             day, distance = max(candidates, key=lambda item: item[1])
