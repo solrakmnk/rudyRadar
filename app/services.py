@@ -75,7 +75,18 @@ class StravaClient:
         return self._request("GET", "/athlete", headers={"Authorization": f"Bearer {token}"})
     def clubs(self, token: str):
         try:
-            return self._request("GET", "/athlete/clubs", headers={"Authorization":f"Bearer {token}"})
+            page, all_items = 1, []
+            while True:
+                items = self._request(
+                    "GET",
+                    "/athlete/clubs",
+                    headers={"Authorization": f"Bearer {token}"},
+                    params={"page": page, "per_page": 200},
+                )
+                all_items.extend(items)
+                if len(items) < 200:
+                    return all_items
+                page += 1
         except StravaError:
             # DetailedAthlete includes clubs; this is an official fallback for
             # applications whose access to the clubs route is restricted.

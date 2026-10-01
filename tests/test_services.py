@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+import httpx
 from app.config import get_settings
 from app.analytics import period_bounds
 from app.services import StravaClient, is_club_member, normalize_sport
@@ -25,3 +26,20 @@ def test_club_membership_matches_the_configured_club():
 def test_authorization_requests_private_activity_access():
     url = StravaClient().authorization_url("state-value")
     assert "activity%3Aread_all" in url
+
+
+def test_clubs_requests_all_pages():
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        page = int(request.url.params["page"])
+        return httpx.Response(200, json=[{"id": item} for item in range(200)] if page == 1 else [{"id": 1187973}])
+
+    client = StravaClient(httpx.Client(transport=httpx.MockTransport(handler)))
+
+    clubs = client.clubs("token")
+
+    assert len(clubs) == 201
+    assert clubs[-1]["id"] == 1187973
+    assert [request.url.params["page"] for request in requests] == ["1", "2"]
