@@ -80,7 +80,9 @@ def callback(request:Request, code:str|None=None, state:str|None=None, error:str
         athlete.membership_check_status="not_member"; athlete.is_active=False; athlete.is_club_member=False; db.commit()
         return templates.TemplateResponse(request,"not_member.html",{"verification_issue":False})
     athlete.membership_check_status="verified"; athlete.is_active=True; athlete.is_club_member=True; db.commit()
-    count=sync_activities(db,athlete,StravaClient()) if settings.strava_sync_enabled else 0
+    stored_activities=db.scalar(select(func.count(Activity.id)).where(Activity.athlete_id==athlete.id)) or 0
+    lookback_days=settings.strava_initial_history_days if stored_activities == 0 else None
+    count=sync_activities(db,athlete,StravaClient(),lookback_days=lookback_days) if settings.strava_sync_enabled else 0
     request.session["athlete_id"] = athlete.id; request.session["sync_count"] = count
     return RedirectResponse("/radar", status_code=303)
 @app.get("/radar",response_class=HTMLResponse)

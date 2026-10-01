@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 from app.config import get_settings
 from app.analytics import period_bounds
-from app.services import is_club_member, normalize_sport
+from app.services import StravaClient, is_club_member, normalize_sport
 
 def test_normalize_sport():
     assert normalize_sport("Swim")=="swim"; assert normalize_sport("Swim", 2)=="open_water"; assert normalize_sport("OpenWaterSwim")=="open_water"; assert normalize_sport("WeightTraining")=="strength"; assert normalize_sport("Workout")=="strength"; assert normalize_sport("Yoga")=="wellbeing"; assert normalize_sport("Pilates")=="wellbeing"; assert normalize_sport("GravelRide")=="bike"; assert normalize_sport("TrailRun")=="run"; assert normalize_sport("Walk")=="walk"; assert normalize_sport("Hike")=="walk"
@@ -20,3 +20,8 @@ def test_two_months_ago_boundaries():
 def test_club_membership_matches_the_configured_club():
     assert is_club_member([{"id": 1187973}])
     assert not is_club_member([{"id": 1}])
+
+
+def test_authorization_requests_private_activity_access():
+    url = StravaClient().authorization_url("state-value")
+    assert "activity%3Aread_all" in url

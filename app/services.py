@@ -10,6 +10,8 @@ from app.models import Athlete
 
 logger = logging.getLogger(__name__)
 
+STRAVA_AUTH_SCOPE = "read,profile:read_all,activity:read_all"
+
 def normalize_sport(value: str | None, workout_type: int | None = None) -> str | None:
     s = value or ""
     # Strava represents pool and open-water swimming as Swim.  Its swim
@@ -48,7 +50,7 @@ class StravaClient:
     def __init__(self, client: httpx.Client | None = None): self.client = client or httpx.Client(timeout=15, follow_redirects=True)
     def authorization_url(self, state: str) -> str:
         s = get_settings()
-        return str(httpx.URL(f"{self.oauth_url}/authorize", params={"client_id": s.strava_client_id, "redirect_uri": s.strava_redirect_uri, "response_type": "code", "approval_prompt": "auto", "scope": "read,profile:read_all,activity:read", "state": state}))
+        return str(httpx.URL(f"{self.oauth_url}/authorize", params={"client_id": s.strava_client_id, "redirect_uri": s.strava_redirect_uri, "response_type": "code", "approval_prompt": "auto", "scope": STRAVA_AUTH_SCOPE, "state": state}))
     def _request(self, method: str, path: str, **kwargs):
         try: r = self.client.request(method, f"{self.base_url}{path}", **kwargs)
         except httpx.TimeoutException as e: raise StravaError("Strava did not respond in time") from e
