@@ -50,6 +50,16 @@ document.addEventListener("DOMContentLoaded", () => {
 
   document.querySelectorAll("[data-board-switch]").forEach((group) => group.querySelectorAll("[data-board-metric]").forEach((button) => button.addEventListener("click", () => {
     group.querySelectorAll("[data-board-metric]").forEach((item) => item.classList.toggle("active", item === button));
-    group.closest(".competition-card").querySelectorAll("[data-board-list]").forEach((list) => list.hidden = list.dataset.boardList !== button.dataset.boardMetric);
+    const card = group.closest(".competition-card");
+    card.querySelectorAll("[data-board-list]").forEach((list) => list.hidden = list.dataset.boardList !== button.dataset.boardMetric);
+    card.querySelectorAll("[data-board-more]").forEach((more) => more.hidden = more.dataset.boardMore !== button.dataset.boardMetric);
   })));
+
+  document.querySelectorAll("[data-board-more]").forEach((button) => button.addEventListener("click", () => {
+    const list = button.closest(".competition-card").querySelector(`[data-board-list="${button.dataset.boardMore}"]`);
+    const expanded = button.getAttribute("aria-expanded") === "true";
+    list.querySelectorAll("[data-board-extra]").forEach((row) => row.hidden = expanded);
+    button.setAttribute("aria-expanded", String(!expanded));
+    button.textContent = expanded ? `Ver todos (${button.dataset.total})` : "Ver menos";
+  }));
 });
