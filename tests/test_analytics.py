@@ -166,6 +166,19 @@ def test_open_water_and_pool_swimming_are_combined_on_dashboard(db):
     assert "open_water" not in board
 
 
+def test_discipline_leaderboard_keeps_every_participant(db):
+    athletes = [athlete(index, f"Atleta {index}") for index in range(1, 7)]
+    for index, member in enumerate(athletes, start=1):
+        db.add(member)
+        db.add(activity(member, 100 + index, "swim", index * 1_000, datetime(2026, 9, 30, 15, tzinfo=UTC)))
+    db.commit()
+
+    board = discipline_leaderboards(db, "week", datetime(2026, 9, 30, tzinfo=UTC))
+
+    assert len(board["swim"]["distance"]) == 6
+    assert board["swim"]["distance"][-1]["name"] == "Atleta 1 Runner"
+
+
 def test_last_week_comparison_uses_the_week_before_it(db):
     carlos = athlete(1, "Carlos")
     db.add_all([

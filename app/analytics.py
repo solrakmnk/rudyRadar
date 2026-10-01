@@ -130,9 +130,9 @@ def discipline_leaderboards(db: Session, kind: str, now: datetime | None = None)
     result = {sport: {"distance": [], "time": [], "activities": []} for sport in SPORTS}
     for sport in SPORTS:
         rows = [row for (row_sport, _), row in totals.items() if row_sport == sport]
-        result[sport]["distance"] = sorted(rows, key=lambda row: row["distance_m"], reverse=True)[:5]
-        result[sport]["time"] = sorted(rows, key=lambda row: row["moving_time_s"], reverse=True)[:5]
-        result[sport]["activities"] = sorted(rows, key=lambda row: row["activity_count"], reverse=True)[:5]
+        result[sport]["distance"] = sorted(rows, key=lambda row: row["distance_m"], reverse=True)
+        result[sport]["time"] = sorted(rows, key=lambda row: row["moving_time_s"], reverse=True)
+        result[sport]["activities"] = sorted(rows, key=lambda row: row["activity_count"], reverse=True)
     return result
 
 
