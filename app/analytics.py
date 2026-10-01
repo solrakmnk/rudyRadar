@@ -9,6 +9,8 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.models import Activity, Athlete
 
+SPORTS = ("swim", "open_water", "bike", "run", "walk", "strength", "wellbeing")
+
 
 def period_bounds(kind: str, now: datetime, timezone: str | None = None) -> tuple[datetime, datetime]:
     """Return UTC bounds for a current or completed local reporting period."""
@@ -65,7 +67,7 @@ def athlete_discipline_stats(db: Session, athlete_id: int, kind: str, now: datet
         )
     ).all()
     result: dict[str, dict[str, float | int]] = {
-        sport: {"distance_m": 0.0, "moving_time_s": 0, "elevation_m": 0.0, "activity_count": 0} for sport in ("swim", "open_water", "bike", "run", "walk", "strength", "wellbeing")
+        sport: {"distance_m": 0.0, "moving_time_s": 0, "elevation_m": 0.0, "activity_count": 0} for sport in SPORTS
     }
     for activity in activities:
         if activity.normalized_sport in result:
@@ -74,6 +76,69 @@ def athlete_discipline_stats(db: Session, athlete_id: int, kind: str, now: datet
             result[activity.normalized_sport]["elevation_m"] += activity.total_elevation_gain_m
             result[activity.normalized_sport]["activity_count"] += 1
     return result
+
+
+def _previous_period(start: datetime, kind: str) -> tuple[datetime, datetime]:
+    if kind in {"week", "last_week"}:
+        return start - timedelta(days=7), start
+    return (start - timedelta(days=1)).replace(day=1), start
+
+
+def athlete_discipline_comparisons(db: Session, athlete_id: int, kind: str, now: datetime | None = None) -> dict[str, dict[str, dict[str, float | int]]]:
+    """Compare the athlete with their immediately preceding equivalent period by sport."""
+    current_start, current_end = period_bounds(kind, now or datetime.now(UTC))
+    previous_start, previous_end = _previous_period(current_start, kind)
+    activities = db.scalars(select(Activity).where(Activity.athlete_id == athlete_id, Activity.start_date >= previous_start, Activity.start_date < current_end)).all()
+
+    def summary(selected: list[Activity]) -> dict[str, float | int]:
+        return {
+            "distance_m": sum(item.distance_m for item in selected),
+            "moving_time_s": sum(item.moving_time_s for item in selected),
+            "activity_count": len(selected),
+        }
+
+    result = {}
+    for sport in SPORTS:
+        current = summary([item for item in activities if item.normalized_sport == sport and current_start <= item.start_date < current_end])
+        previous = summary([item for item in activities if item.normalized_sport == sport and previous_start <= item.start_date < previous_end])
+        result[sport] = {"current": current, "previous": previous}
+    return result
+
+
+def discipline_leaderboards(db: Session, kind: str, now: datetime | None = None) -> dict[str, dict[str, list[dict[str, str | int | float]]]]:
+    """Create independent distance, time and session leaderboards for every discipline."""
+    start, end = period_bounds(kind, now or datetime.now(UTC))
+    athletes = {item.id: item for item in db.scalars(select(Athlete).where(Athlete.is_active.is_(True), Athlete.is_club_member.is_(True))).all()}
+    activities = db.scalars(select(Activity).where(Activity.start_date >= start, Activity.start_date < end, Activity.normalized_sport.is_not(None))).all()
+    totals: dict[tuple[str, int], dict[str, str | int | float]] = {}
+    for item in activities:
+        athlete = athletes.get(item.athlete_id)
+        if not athlete or item.normalized_sport not in SPORTS:
+            continue
+        key = (item.normalized_sport, item.athlete_id)
+        row = totals.setdefault(key, {"name": f"{athlete.firstname} {athlete.lastname}".strip(), "profile_url": athlete.profile_url or "", "distance_m": 0.0, "moving_time_s": 0, "activity_count": 0})
+        row["distance_m"] += item.distance_m
+        row["moving_time_s"] += item.moving_time_s
+        row["activity_count"] += 1
+    result = {sport: {"distance": [], "time": [], "activities": []} for sport in SPORTS}
+    for sport in SPORTS:
+        rows = [row for (row_sport, _), row in totals.items() if row_sport == sport]
+        result[sport]["distance"] = sorted(rows, key=lambda row: row["distance_m"], reverse=True)[:5]
+        result[sport]["time"] = sorted(rows, key=lambda row: row["moving_time_s"], reverse=True)[:5]
+        result[sport]["activities"] = sorted(rows, key=lambda row: row["activity_count"], reverse=True)[:5]
+    return result
+
+
+def discipline_type_breakdown(db: Session, athlete_id: int, kind: str, now: datetime | None = None) -> dict[str, list[dict[str, str | int]]]:
+    """Show which exact Strava activity types compose each dashboard discipline."""
+    start, end = period_bounds(kind, now or datetime.now(UTC))
+    activities = db.scalars(select(Activity).where(Activity.athlete_id == athlete_id, Activity.start_date >= start, Activity.start_date < end, Activity.normalized_sport.is_not(None))).all()
+    counts: dict[tuple[str, str], int] = {}
+    for item in activities:
+        if item.normalized_sport in SPORTS:
+            key = (item.normalized_sport, item.sport_type)
+            counts[key] = counts.get(key, 0) + 1
+    return {sport: [{"type": activity_type, "count": count} for (row_sport, activity_type), count in sorted(counts.items()) if row_sport == sport] for sport in SPORTS}
 
 
 def team_leaderboard(db: Session, kind: str, now: datetime | None = None) -> list[dict[str, str | int | float]]:

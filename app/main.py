@@ -13,7 +13,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from app.config import get_settings
 from app.database import get_db
 from app.models import Activity, Athlete
-from app.analytics import activity_highlights, athlete_discipline_stats, athlete_period_stats, period_comparison, rankings, team_group_stats, team_highlights, team_leaderboard, team_overview, team_sport_highlights
+from app.analytics import activity_highlights, athlete_discipline_comparisons, athlete_discipline_stats, athlete_period_stats, discipline_leaderboards, discipline_type_breakdown, period_comparison, rankings, team_group_stats, team_highlights, team_leaderboard, team_overview, team_sport_highlights
 from app.services import Crypto, StravaClient, StravaError, get_valid_access_token, is_club_member
 from app.sync import sync_activities, upsert_activity
 from app.i18n import DEFAULT_LOCALE, SUPPORTED_LOCALES, preferred_locale, translate
@@ -89,8 +89,8 @@ def radar(request: Request, period: str="week", db: Session=Depends(get_db)):
     athlete=db.get(Athlete, athlete_id) if athlete_id else None
     if not athlete or not athlete.is_active or not athlete.is_club_member: return RedirectResponse("/",status_code=303)
     if period not in {"week","last_week","month","last_month","two_months_ago"}: period="week"
-    count=request.session.pop("sync_count",None)
-    return templates.TemplateResponse(request,"radar.html",{"athlete":athlete,"period":period,"stats":athlete_period_stats(db,athlete.id,period),"discipline_stats":athlete_discipline_stats(db,athlete.id,period),"rankings":rankings(db,period),"leaderboard":team_leaderboard(db,period),"comparison":period_comparison(db,athlete.id,period),"highlights":activity_highlights(db,athlete.id,kind=period),"team_highlights":team_highlights(db,kind=period),"team_overview":team_overview(db,period),"team_groups":team_group_stats(db,period),"sport_highlights":team_sport_highlights(db,kind=period),"sync_count":count})
+    count=request.session.pop("sync_count",None); discipline_stats=athlete_discipline_stats(db,athlete.id,period); default_sport=max(discipline_stats,key=lambda sport:discipline_stats[sport]["activity_count"])
+    return templates.TemplateResponse(request,"radar.html",{"athlete":athlete,"period":period,"stats":athlete_period_stats(db,athlete.id,period),"discipline_stats":discipline_stats,"discipline_comparisons":athlete_discipline_comparisons(db,athlete.id,period),"discipline_boards":discipline_leaderboards(db,period),"discipline_types":discipline_type_breakdown(db,athlete.id,period),"default_sport":default_sport,"rankings":rankings(db,period),"leaderboard":team_leaderboard(db,period),"comparison":period_comparison(db,athlete.id,period),"highlights":activity_highlights(db,athlete.id,kind=period),"team_highlights":team_highlights(db,kind=period),"team_overview":team_overview(db,period),"team_groups":team_group_stats(db,period),"sport_highlights":team_sport_highlights(db,kind=period),"sync_count":count})
 def admin_ok(request:Request):
     supplied=request.headers.get("x-admin-secret",""); auth=request.headers.get("authorization","")
     if auth.startswith("Bearer "): supplied=auth.removeprefix("Bearer ")

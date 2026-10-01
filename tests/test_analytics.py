@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from app.analytics import activity_highlights, athlete_discipline_stats, athlete_period_stats, monthly_comparison, period_comparison, rankings, team_group_stats, team_highlights, team_leaderboard, team_overview, team_sport_highlights, weekly_comparison
+from app.analytics import activity_highlights, athlete_discipline_comparisons, athlete_discipline_stats, athlete_period_stats, discipline_leaderboards, monthly_comparison, period_comparison, rankings, team_group_stats, team_highlights, team_leaderboard, team_overview, team_sport_highlights, weekly_comparison
 from app.models import Activity, Athlete
 
 
@@ -214,3 +214,38 @@ def test_team_overview_and_group_stats_count_registered_members(db):
     overview, groups = team_overview(db, "week", now), team_group_stats(db, "week", now)
     assert overview == {"registered": 2, "participants": 1, "activities": 1, "distance_m": 0, "moving_time_s": 3600}
     assert groups["strength"] == {"participants": 1, "activities": 1}
+
+
+def test_discipline_leaderboards_keep_metrics_and_sports_separate(db):
+    carlos, ana = athlete(1, "Carlos"), athlete(2, "Ana")
+    carlos.is_active = ana.is_active = True
+    carlos.is_club_member = ana.is_club_member = True
+    run = activity(carlos, 11, "run", 10_000, datetime(2026, 9, 29, 15, tzinfo=UTC))
+    bike = activity(ana, 12, "bike", 40_000, datetime(2026, 9, 29, 15, tzinfo=UTC))
+    shorter_run = activity(ana, 13, "run", 5_000, datetime(2026, 9, 30, 15, tzinfo=UTC))
+    shorter_run.moving_time_s = 7200
+    db.add_all([carlos, ana, run, bike, shorter_run])
+    db.commit()
+
+    boards = discipline_leaderboards(db, "week", datetime(2026, 9, 30, tzinfo=UTC))
+
+    assert boards["run"]["distance"][0]["name"] == "Carlos Runner"
+    assert boards["run"]["time"][0]["name"] == "Ana Runner"
+    assert [row["name"] for row in boards["bike"]["distance"]] == ["Ana Runner"]
+
+
+def test_personal_discipline_comparison_uses_previous_period_per_sport(db):
+    carlos = athlete(1, "Carlos")
+    db.add_all([
+        carlos,
+        activity(carlos, 11, "wellbeing", 0, datetime(2026, 9, 29, 15, tzinfo=UTC)),
+        activity(carlos, 12, "wellbeing", 0, datetime(2026, 9, 22, 15, tzinfo=UTC)),
+        activity(carlos, 13, "run", 8_000, datetime(2026, 9, 29, 15, tzinfo=UTC)),
+    ])
+    db.commit()
+
+    result = athlete_discipline_comparisons(db, carlos.id, "week", datetime(2026, 9, 30, tzinfo=UTC))
+
+    assert result["wellbeing"]["current"]["activity_count"] == 1
+    assert result["wellbeing"]["previous"]["activity_count"] == 1
+    assert result["run"]["current"]["distance_m"] == 8_000
