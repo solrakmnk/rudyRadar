@@ -6,6 +6,7 @@ def test_upsert_activity_updates_an_existing_strava_activity(db):
     athlete = Athlete(strava_athlete_id=99, firstname="Carlos", lastname="A")
     db.add(athlete)
     db.commit()
+    assert athlete.membership_check_status == "pending"
     initial = {
         "id": 12345678901,
         "name": "Primera salida",

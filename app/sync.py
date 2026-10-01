@@ -63,6 +63,10 @@ def sync_all_active_athletes(db: Session) -> dict[str, int]:
             token = get_valid_access_token(db, athlete, client)
             if not is_club_member(client.clubs(token)):
                 athlete.is_club_member = False
+                athlete.is_active = False
+                athlete.membership_check_status = "not_member"
+                athlete.membership_checked_at = datetime.now(UTC)
+                athlete.membership_check_error = None
                 db.commit()
                 logger.info("athlete_id=%s is no longer a RUD@S member", athlete.id)
                 continue

@@ -65,12 +65,21 @@ def callback(request:Request, code:str|None=None, state:str|None=None, error:str
     if error: return templates.TemplateResponse(request,"error.html",{"message":"La autorización fue cancelada."},status_code=400)
     if not expected or not state or not hmac.compare_digest(expected,state): return templates.TemplateResponse(request,"error.html",{"message":"La conexión expiró. Inténtalo nuevamente."},status_code=400)
     try:
-        client=StravaClient(); payload=client.exchange_code(code or ""); token=payload["access_token"]; clubs=client.clubs(token)
+        client=StravaClient(); payload=client.exchange_code(code or ""); token=payload["access_token"]
     except StravaError as e: return templates.TemplateResponse(request,"error.html",{"message":str(e)},status_code=502)
-    if not is_club_member(clubs): return templates.TemplateResponse(request,"not_member.html")
     source=payload["athlete"]; athlete=db.scalar(select(Athlete).where(Athlete.strava_athlete_id==source["id"]))
     if not athlete: athlete=Athlete(strava_athlete_id=source["id"],firstname=source.get("firstname","Rudy"),lastname=source.get("lastname","")); db.add(athlete)
-    crypto=Crypto(); athlete.profile_url=source.get("profile"); athlete.access_token_encrypted=crypto.encrypt(token); athlete.refresh_token_encrypted=crypto.encrypt(payload["refresh_token"]); athlete.token_expires_at=datetime.fromtimestamp(payload["expires_at"],UTC); athlete.is_active=True; athlete.is_club_member=True; db.commit()
+    crypto=Crypto(); athlete.firstname=source.get("firstname","Rudy"); athlete.lastname=source.get("lastname",""); athlete.profile_url=source.get("profile"); athlete.access_token_encrypted=crypto.encrypt(token); athlete.refresh_token_encrypted=crypto.encrypt(payload["refresh_token"]); athlete.token_expires_at=datetime.fromtimestamp(payload["expires_at"],UTC); athlete.membership_checked_at=datetime.now(UTC); athlete.membership_check_error=None
+    try:
+        clubs=client.clubs(token)
+    except StravaError as e:
+        athlete.membership_check_status="unavailable"; athlete.membership_check_error="club_lookup_failed"; athlete.is_active=False; athlete.is_club_member=False; db.commit()
+        logger.warning("Could not verify RUD@S membership for strava_athlete_id=%s", athlete.strava_athlete_id)
+        return templates.TemplateResponse(request,"not_member.html",{"verification_issue":True},status_code=503)
+    if not is_club_member(clubs):
+        athlete.membership_check_status="not_member"; athlete.is_active=False; athlete.is_club_member=False; db.commit()
+        return templates.TemplateResponse(request,"not_member.html",{"verification_issue":False})
+    athlete.membership_check_status="verified"; athlete.is_active=True; athlete.is_club_member=True; db.commit()
     count=sync_activities(db,athlete,StravaClient()) if settings.strava_sync_enabled else 0
     request.session["athlete_id"] = athlete.id; request.session["sync_count"] = count
     return RedirectResponse("/radar", status_code=303)
@@ -90,6 +99,18 @@ def admin_ok(request:Request):
 def admin(request:Request,period:str="week",db:Session=Depends(get_db)):
     athletes=db.scalars(select(Athlete).order_by(Athlete.firstname)).all(); active=sum(a.is_active for a in athletes); activity_count=db.scalar(select(func.count(Activity.id))) or 0; total=db.scalar(select(func.coalesce(func.sum(Activity.distance_m),0))) or 0
     return templates.TemplateResponse(request,"admin.html",{"athletes":athletes,"rankings":rankings(db,period),"period":period,"active":active,"activity_count":activity_count,"distance_m":total})
+@app.post("/admin/athletes/{athlete_id}/revalidate", dependencies=[Depends(admin_ok)])
+def revalidate_athlete(athlete_id:int, db:Session=Depends(get_db)):
+    athlete=db.get(Athlete,athlete_id)
+    if not athlete: raise HTTPException(404)
+    athlete.membership_checked_at=datetime.now(UTC); athlete.membership_check_error=None
+    try:
+        clubs=StravaClient().clubs(get_valid_access_token(db,athlete,StravaClient()))
+        verified=is_club_member(clubs); athlete.membership_check_status="verified" if verified else "not_member"; athlete.is_club_member=verified; athlete.is_active=verified
+    except StravaError:
+        athlete.membership_check_status="unavailable"; athlete.membership_check_error="club_lookup_failed"; athlete.is_club_member=False; athlete.is_active=False
+    db.commit()
+    return RedirectResponse("/admin",status_code=303)
 @app.get("/admin/report",response_class=PlainTextResponse,dependencies=[Depends(admin_ok)])
 def report(period:str="week",db:Session=Depends(get_db)):
     r=rankings(db,period); medals=["🥇","🥈","🥉"]; labels={"swim":"🏊 NATACIÓN","bike":"🚴 BICI","run":"🏃 CARRERA"}; lines=["👀 RADAR RUDO",f"Rudy encontró las historias de este {('mes' if period=='month' else 'semana')}..."]
