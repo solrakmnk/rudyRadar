@@ -60,10 +60,13 @@ def delete_my_data(request: Request, db: Session = Depends(get_db)):
 def auth(request:Request):
     state=secrets.token_urlsafe(32); request.session["oauth_state"]=state; return RedirectResponse(StravaClient().authorization_url(state))
 @app.get("/auth/strava/callback",response_class=HTMLResponse)
-def callback(request:Request, code:str|None=None, state:str|None=None, error:str|None=None, db:Session=Depends(get_db)):
+def callback(request:Request, code:str|None=None, state:str|None=None, error:str|None=None, scope:str|None=None, db:Session=Depends(get_db)):
     expected=request.session.pop("oauth_state",None)
     if error: return templates.TemplateResponse(request,"error.html",{"message":"La autorización fue cancelada."},status_code=400)
     if not expected or not state or not hmac.compare_digest(expected,state): return templates.TemplateResponse(request,"error.html",{"message":"La conexión expiró. Inténtalo nuevamente."},status_code=400)
+    granted_scopes={item.strip() for item in (scope or "").split(",")}
+    if "activity:read_all" not in granted_scopes:
+        return templates.TemplateResponse(request,"error.html",{"message":"Radar Rudo necesita permiso para ver tus actividades. Vuelve a conectar Strava y acepta la casilla de actividades, incluidas las privadas.","retry_auth":True},status_code=400)
     try:
         client=StravaClient(); payload=client.exchange_code(code or ""); token=payload["access_token"]
     except StravaError as e: return templates.TemplateResponse(request,"error.html",{"message":str(e)},status_code=502)
@@ -82,7 +85,11 @@ def callback(request:Request, code:str|None=None, state:str|None=None, error:str
     athlete.membership_check_status="verified"; athlete.is_active=True; athlete.is_club_member=True; db.commit()
     stored_activities=db.scalar(select(func.count(Activity.id)).where(Activity.athlete_id==athlete.id)) or 0
     lookback_days=settings.strava_initial_history_days if stored_activities == 0 else None
-    count=sync_activities(db,athlete,StravaClient(),lookback_days=lookback_days) if settings.strava_sync_enabled else 0
+    try:
+        count=sync_activities(db,athlete,StravaClient(),lookback_days=lookback_days) if settings.strava_sync_enabled else 0
+    except StravaError:
+        db.rollback(); logger.exception("Initial activity sync failed for athlete_id=%s",athlete.id)
+        return templates.TemplateResponse(request,"error.html",{"message":"Strava autorizó tu cuenta, pero no permitió descargar las actividades. Vuelve a conectar y acepta el permiso de actividades.","retry_auth":True},status_code=502)
     request.session["athlete_id"] = athlete.id; request.session["sync_count"] = count
     return RedirectResponse("/radar", status_code=303)
 @app.get("/radar",response_class=HTMLResponse)

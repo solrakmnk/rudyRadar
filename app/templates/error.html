@@ -1,1 +1,1 @@
-{% extends 'base.html' %}{% block body %}<main><h1>{{ t('something_wrong') }}</h1><p>{{ message }}</p><a href="/">{{ t('back') }}</a></main>{% endblock %}
+{% extends 'base.html' %}{% block body %}<main><h1>{{ t('something_wrong') }}</h1><p>{{ message }}</p>{% if retry_auth %}<a class="button" href="/auth/strava">Volver a conectar Strava</a>{% else %}<a href="/">{{ t('back') }}</a>{% endif %}</main>{% endblock %}

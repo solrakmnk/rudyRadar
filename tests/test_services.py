@@ -26,6 +26,7 @@ def test_club_membership_matches_the_configured_club():
 def test_authorization_requests_private_activity_access():
     url = StravaClient().authorization_url("state-value")
     assert "activity%3Aread_all" in url
+    assert "approval_prompt=force" in url
 
 
 def test_clubs_requests_all_pages():
