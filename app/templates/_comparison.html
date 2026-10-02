@@ -1,0 +1,7 @@
+{% macro period_bars(current, previous, current_text, previous_text) -%}
+{% set peak = current if current > previous else previous %}
+<div class="period-bars">
+  <div><span>Periodo actual</span><i><b style="width:{{ (current / peak * 100) if peak else 0 }}%"></b></i><strong>{{ current_text }}</strong></div>
+  <div><span>Periodo anterior</span><i><b style="width:{{ (previous / peak * 100) if peak else 0 }}%"></b></i><strong>{{ previous_text }}</strong></div>
+</div>
+{%- endmacro %}
