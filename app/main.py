@@ -70,10 +70,11 @@ def delete_my_data(request: Request, db: Session = Depends(get_db)):
     request.session.clear()
     return RedirectResponse("/?deleted=1", status_code=303)
 @app.get("/auth/strava")
-def auth(request:Request, include_private:bool=False, remove_private:bool=False):
-    if not include_private and not remove_private and request.session.get("athlete_id"):
+def auth(request:Request, include_private:bool=False, remove_private:bool=False, mode:str="register"):
+    if mode == "login" and request.session.get("athlete_id"):
         return RedirectResponse("/radar",status_code=303)
-    state=secrets.token_urlsafe(32); request.session["oauth_state"]=state; request.session["oauth_include_private"]=include_private; request.session["oauth_remove_private"]=remove_private; return RedirectResponse(StravaClient().authorization_url(state,include_private=include_private,force_approval=True))
+    requested_private=include_private or mode == "login"
+    state=secrets.token_urlsafe(32); request.session["oauth_state"]=state; request.session["oauth_include_private"]=requested_private; request.session["oauth_remove_private"]=remove_private; return RedirectResponse(StravaClient().authorization_url(state,include_private=requested_private,force_approval=mode != "login"))
 @app.get("/auth/strava/callback",response_class=HTMLResponse)
 def callback(request:Request, code:str|None=None, state:str|None=None, error:str|None=None, scope:str|None=None, db:Session=Depends(get_db)):
     expected=request.session.pop("oauth_state",None)

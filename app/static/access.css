@@ -20,6 +20,7 @@
 
 .connect-primary:hover { background: #e94400; transform: translateY(-1px); }
 .quick-connect > small { color: #91a8bf; }
+.register-link { width:max-content; margin-top:10px; color:#dbeaff; font-weight:750; text-underline-offset:4px; }
 
 .access-choice {
   display: grid;
