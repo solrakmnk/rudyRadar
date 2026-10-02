@@ -10,7 +10,7 @@ from app.models import Athlete
 
 logger = logging.getLogger(__name__)
 
-STRAVA_AUTH_SCOPE = "read,profile:read_all,activity:read_all"
+STRAVA_AUTH_SCOPE = "read,profile:read_all,activity:read"
 
 def normalize_sport(value: str | None, workout_type: int | None = None) -> str | None:
     s = value or ""

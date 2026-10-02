@@ -65,8 +65,8 @@ def callback(request:Request, code:str|None=None, state:str|None=None, error:str
     if error: return templates.TemplateResponse(request,"error.html",{"message":"La autorización fue cancelada."},status_code=400)
     if not expected or not state or not hmac.compare_digest(expected,state): return templates.TemplateResponse(request,"error.html",{"message":"La conexión expiró. Inténtalo nuevamente."},status_code=400)
     granted_scopes={item.strip() for item in (scope or "").split(",")}
-    if "activity:read_all" not in granted_scopes:
-        return templates.TemplateResponse(request,"error.html",{"message":"Radar Rudo necesita permiso para ver tus actividades. Vuelve a conectar Strava y acepta la casilla de actividades, incluidas las privadas.","retry_auth":True},status_code=400)
+    if not granted_scopes.intersection({"activity:read", "activity:read_all"}):
+        return templates.TemplateResponse(request,"error.html",{"message":"Radar Rudo necesita permiso para ver tus actividades públicas y para seguidores. Vuelve a conectar Strava y acepta la casilla de actividades.","retry_auth":True},status_code=400)
     try:
         client=StravaClient(); payload=client.exchange_code(code or ""); token=payload["access_token"]
     except StravaError as e: return templates.TemplateResponse(request,"error.html",{"message":str(e)},status_code=502)
@@ -89,7 +89,7 @@ def callback(request:Request, code:str|None=None, state:str|None=None, error:str
         count=sync_activities(db,athlete,StravaClient(),lookback_days=lookback_days) if settings.strava_sync_enabled else 0
     except StravaError:
         db.rollback(); logger.exception("Initial activity sync failed for athlete_id=%s",athlete.id)
-        return templates.TemplateResponse(request,"error.html",{"message":"Strava autorizó tu cuenta, pero no permitió descargar las actividades. Vuelve a conectar y acepta el permiso de actividades.","retry_auth":True},status_code=502)
+        return templates.TemplateResponse(request,"error.html",{"message":"Strava autorizó tu cuenta, pero no permitió descargar las actividades públicas. Vuelve a conectar y acepta el permiso de actividades.","retry_auth":True},status_code=502)
     request.session["athlete_id"] = athlete.id; request.session["sync_count"] = count
     return RedirectResponse("/radar", status_code=303)
 @app.get("/radar",response_class=HTMLResponse)

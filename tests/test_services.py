@@ -23,9 +23,10 @@ def test_club_membership_matches_the_configured_club():
     assert not is_club_member([{"id": 1}])
 
 
-def test_authorization_requests_private_activity_access():
+def test_authorization_requests_non_private_activity_access():
     url = StravaClient().authorization_url("state-value")
-    assert "activity%3Aread_all" in url
+    assert "activity%3Aread" in url
+    assert "activity%3Aread_all" not in url
     assert "approval_prompt=force" in url
 
 

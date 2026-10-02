@@ -21,7 +21,7 @@ Abre <http://localhost:8000>. El admin está en `/admin`; envía `Authorization:
 
 Completa `STRAVA_CLIENT_ID`, `STRAVA_CLIENT_SECRET`, `TOKEN_ENCRYPTION_KEY`, `SESSION_SECRET` y `ADMIN_SECRET`. En Strava API Settings configura el Authorization Callback Domain para el dominio del callback; localmente usa `localhost`, y configura `STRAVA_REDIRECT_URI=http://localhost:8000/auth/strava/callback`.
 
-El flujo solicita `read,profile:read_all,activity:read_all` para incluir actividades privadas del propio atleta, consulta `/athlete/clubs` en el servidor y usa `GET /athlete` como respaldo oficial para comprobar sus clubes. Permite entrar solamente al club `1187973`. No se guardan GPS, polylines ni datos biométricos.
+El flujo solicita `read,profile:read_all,activity:read`, consulta `/athlete/clubs` en el servidor y usa `GET /athlete` como respaldo oficial para comprobar sus clubes. Permite entrar solamente al club `1187973`. Se importan actividades visibles para Todos o Seguidores; las actividades configuradas como Solo tú quedan fuera. No se guardan GPS, polylines ni datos biométricos.
 
 Por defecto `STRAVA_SYNC_ENABLED=false`: OAuth y validación de club están implementados, pero no se descargan actividades reales. Actívalo solamente tras confirmar que el uso previsto cumple las condiciones vigentes de Strava. Los tests no contactan Strava.
 
