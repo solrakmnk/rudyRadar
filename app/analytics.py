@@ -121,6 +121,35 @@ def athlete_discipline_comparisons(db: Session, athlete_id: int, kind: str, now:
     return result
 
 
+def team_discipline_comparisons(db: Session, kind: str, now: datetime | None = None) -> dict[str, dict[str, dict[str, float | int]]]:
+    """Compare verified team totals with the preceding equivalent period."""
+    current_start, current_end = period_bounds(kind, now or datetime.now(UTC))
+    previous_start, previous_end = _previous_period(current_start, kind)
+    athlete_ids = set(db.scalars(select(Athlete.id).where(Athlete.is_active.is_(True), Athlete.is_club_member.is_(True))).all())
+    activities = db.scalars(select(Activity).where(Activity.start_date >= previous_start, Activity.start_date < current_end)).all()
+
+    def summary(selected: list[Activity]) -> dict[str, float | int]:
+        return {"distance_m": sum(item.distance_m for item in selected), "moving_time_s": sum(item.moving_time_s for item in selected), "activity_count": len(selected), "participants": len({item.athlete_id for item in selected})}
+
+    result = {}
+    for sport in SPORTS:
+        matching = [item for item in activities if item.athlete_id in athlete_ids and dashboard_sport(item.normalized_sport) == sport]
+        result[sport] = {"current": summary([item for item in matching if current_start <= item.start_date < current_end]), "previous": summary([item for item in matching if previous_start <= item.start_date < previous_end])}
+    return result
+
+
+def team_active_members(db: Session, kind: str, now: datetime | None = None) -> list[dict[str, str | int]]:
+    """List verified members with aggregate participation for the period."""
+    start, end = period_bounds(kind, now or datetime.now(UTC))
+    athletes = db.scalars(select(Athlete).where(Athlete.is_active.is_(True), Athlete.is_club_member.is_(True))).all()
+    activities = db.scalars(select(Activity).where(Activity.start_date >= start, Activity.start_date < end)).all()
+    rows = []
+    for athlete in athletes:
+        own = [item for item in activities if item.athlete_id == athlete.id]
+        rows.append({"athlete_id": athlete.id, "name": f"{athlete.firstname} {athlete.lastname}".strip(), "profile_url": athlete.profile_url or "", "activity_count": len(own), "moving_time_s": sum(item.moving_time_s for item in own)})
+    return sorted(rows, key=lambda row: (row["activity_count"] == 0, -int(row["moving_time_s"]), str(row["name"])))
+
+
 def discipline_leaderboards(db: Session, kind: str, now: datetime | None = None) -> dict[str, dict[str, list[dict[str, str | int | float]]]]:
     """Create independent distance, time and session leaderboards for every discipline."""
     start, end = period_bounds(kind, now or datetime.now(UTC))
