@@ -4,7 +4,7 @@
 <main class="radar dashboard dashboard-v2">
   <nav class="radar-nav">
     <span class="team"><img class="club-mark" src="/static/rudos-logo.png" alt="RUD@S"> {{ t('product') }}</span>
-    <details class="account-menu"><summary aria-label="Menú de cuenta">☰</summary><div><span>{{ athlete.firstname }}</span><a href="/auth/strava?include_private=true">{{ t('enable_private') }}</a><a href="/">{{ t('logout') }}</a><form method="post" action="/privacy/delete" onsubmit="return confirm('{{ t('delete_confirm') }}')"><button type="submit">{{ t('delete_data') }}</button></form></div></details>
+    <details class="account-menu"><summary aria-label="Menú de cuenta">☰</summary><div><span>{{ athlete.firstname }}</span>{% if includes_private %}<small class="scope-status">✓ {{ t('private_enabled') }}</small>{% else %}<a href="/auth/strava?include_private=true">{{ t('enable_private') }}</a>{% endif %}<a href="/account">{{ t('account_settings') }}</a><a href="/logout">{{ t('logout') }}</a></div></details>
   </nav>
 
   <header class="dashboard-top dashboard-intro">
