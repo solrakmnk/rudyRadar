@@ -73,7 +73,11 @@ def delete_my_data(request: Request, db: Session = Depends(get_db)):
 def auth(request:Request, include_private:bool=False, mode:str="register"):
     if mode == "login" and request.session.get("athlete_id"):
         return RedirectResponse("/radar",status_code=303)
-    state=secrets.token_urlsafe(32); request.session["oauth_state"]=state; request.session["oauth_include_private"]=include_private; return RedirectResponse(StravaClient().authorization_url(state,include_private=include_private,force_approval=mode != "login"))
+    # Without a local session the athlete is unknown until Strava returns them.
+    # Use the broad scope for login so an existing private grant is never
+    # silently replaced by a narrower token.
+    requested_private=include_private or mode == "login"
+    state=secrets.token_urlsafe(32); request.session["oauth_state"]=state; request.session["oauth_include_private"]=requested_private; return RedirectResponse(StravaClient().authorization_url(state,include_private=requested_private,force_approval=mode != "login"))
 @app.get("/auth/strava/callback",response_class=HTMLResponse)
 def callback(request:Request, code:str|None=None, state:str|None=None, error:str|None=None, scope:str|None=None, db:Session=Depends(get_db)):
     expected=request.session.pop("oauth_state",None)
