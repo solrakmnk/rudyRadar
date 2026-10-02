@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 import httpx
 from app.config import get_settings
 from app.analytics import period_bounds
-from app.services import StravaClient, is_club_member, normalize_sport
+from app.services import StravaClient, is_club_member, normalize_sport, parse_scopes
 
 def test_normalize_sport():
     assert normalize_sport("Swim")=="swim"; assert normalize_sport("Swim", 2)=="open_water"; assert normalize_sport("OpenWaterSwim")=="open_water"; assert normalize_sport("WeightTraining")=="strength"; assert normalize_sport("Workout")=="strength"; assert normalize_sport("Yoga")=="wellbeing"; assert normalize_sport("Pilates")=="wellbeing"; assert normalize_sport("GravelRide")=="bike"; assert normalize_sport("TrailRun")=="run"; assert normalize_sport("Walk")=="walk"; assert normalize_sport("Hike")=="walk"
@@ -28,6 +28,17 @@ def test_authorization_requests_non_private_activity_access():
     assert "activity%3Aread" in url
     assert "activity%3Aread_all" not in url
     assert "approval_prompt=force" in url
+
+
+def test_authorization_can_request_private_activity_access():
+    url = StravaClient().authorization_url("state-value", include_private=True)
+    assert "activity%3Aread_all" in url
+
+
+def test_parse_scopes_accepts_callback_and_token_formats():
+    expected = {"read", "profile:read_all", "activity:read"}
+    assert parse_scopes("read,profile:read_all,activity:read") == expected
+    assert parse_scopes("read profile:read_all activity:read") == expected
 
 
 def test_clubs_requests_all_pages():

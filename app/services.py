@@ -10,7 +10,12 @@ from app.models import Athlete
 
 logger = logging.getLogger(__name__)
 
-STRAVA_AUTH_SCOPE = "read,profile:read_all,activity:read"
+STRAVA_VISIBLE_SCOPE = "read,profile:read_all,activity:read"
+STRAVA_PRIVATE_SCOPE = "read,profile:read_all,activity:read_all"
+
+
+def parse_scopes(value: str | None) -> set[str]:
+    return {item for item in (value or "").replace(",", " ").split() if item}
 
 def normalize_sport(value: str | None, workout_type: int | None = None) -> str | None:
     s = value or ""
@@ -48,9 +53,10 @@ class StravaClient:
     base_url = "https://www.strava.com/api/v3"
     oauth_url = "https://www.strava.com/oauth"
     def __init__(self, client: httpx.Client | None = None): self.client = client or httpx.Client(timeout=15, follow_redirects=True)
-    def authorization_url(self, state: str) -> str:
+    def authorization_url(self, state: str, *, include_private: bool = False) -> str:
         s = get_settings()
-        return str(httpx.URL(f"{self.oauth_url}/authorize", params={"client_id": s.strava_client_id, "redirect_uri": s.strava_redirect_uri, "response_type": "code", "approval_prompt": "force", "scope": STRAVA_AUTH_SCOPE, "state": state}))
+        scope = STRAVA_PRIVATE_SCOPE if include_private else STRAVA_VISIBLE_SCOPE
+        return str(httpx.URL(f"{self.oauth_url}/authorize", params={"client_id": s.strava_client_id, "redirect_uri": s.strava_redirect_uri, "response_type": "code", "approval_prompt": "force", "scope": scope, "state": state}))
     def _request(self, method: str, path: str, **kwargs):
         try: r = self.client.request(method, f"{self.base_url}{path}", **kwargs)
         except httpx.TimeoutException as e: raise StravaError("Strava did not respond in time") from e
@@ -111,5 +117,7 @@ def get_valid_access_token(db: Session, athlete: Athlete, client: StravaClient) 
     crypto = Crypto()
     if athlete.token_expires_at and athlete.token_expires_at > datetime.now(UTC) + timedelta(minutes=5): return crypto.decrypt(athlete.access_token_encrypted)
     payload=client.refresh(crypto.decrypt(athlete.refresh_token_encrypted))
-    athlete.access_token_encrypted=crypto.encrypt(payload["access_token"]); athlete.refresh_token_encrypted=crypto.encrypt(payload["refresh_token"]); athlete.token_expires_at=datetime.fromtimestamp(payload["expires_at"], UTC); db.commit()
+    athlete.access_token_encrypted=crypto.encrypt(payload["access_token"]); athlete.refresh_token_encrypted=crypto.encrypt(payload["refresh_token"]); athlete.token_expires_at=datetime.fromtimestamp(payload["expires_at"], UTC)
+    if payload.get("scope"): athlete.authorized_scopes=",".join(sorted(parse_scopes(payload["scope"])))
+    db.commit()
     return payload["access_token"]

@@ -13,6 +13,7 @@ class Athlete(Base):
     access_token_encrypted: Mapped[str] = mapped_column(String, default="")
     refresh_token_encrypted: Mapped[str] = mapped_column(String, default="")
     token_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    authorized_scopes: Mapped[str | None] = mapped_column(String(200), nullable=True)
     is_club_member: Mapped[bool] = mapped_column(Boolean, default=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     membership_check_status: Mapped[str] = mapped_column(String(30), default="pending")

@@ -14,7 +14,7 @@ from app.config import get_settings
 from app.database import get_db
 from app.models import Activity, Athlete
 from app.analytics import activity_highlights, athlete_discipline_comparisons, athlete_discipline_stats, athlete_period_stats, discipline_leaderboards, discipline_type_breakdown, period_comparison, rankings, team_group_stats, team_highlights, team_leaderboard, team_overview, team_sport_highlights
-from app.services import Crypto, StravaClient, StravaError, get_valid_access_token, is_club_member
+from app.services import Crypto, StravaClient, StravaError, get_valid_access_token, is_club_member, parse_scopes
 from app.sync import sync_activities, upsert_activity
 from app.i18n import DEFAULT_LOCALE, SUPPORTED_LOCALES, preferred_locale, translate
 
@@ -57,14 +57,15 @@ def delete_my_data(request: Request, db: Session = Depends(get_db)):
     request.session.clear()
     return RedirectResponse("/?deleted=1", status_code=303)
 @app.get("/auth/strava")
-def auth(request:Request):
-    state=secrets.token_urlsafe(32); request.session["oauth_state"]=state; return RedirectResponse(StravaClient().authorization_url(state))
+def auth(request:Request, include_private:bool=False):
+    state=secrets.token_urlsafe(32); request.session["oauth_state"]=state; request.session["oauth_include_private"]=include_private; return RedirectResponse(StravaClient().authorization_url(state,include_private=include_private))
 @app.get("/auth/strava/callback",response_class=HTMLResponse)
 def callback(request:Request, code:str|None=None, state:str|None=None, error:str|None=None, scope:str|None=None, db:Session=Depends(get_db)):
     expected=request.session.pop("oauth_state",None)
+    requested_private=bool(request.session.pop("oauth_include_private",False))
     if error: return templates.TemplateResponse(request,"error.html",{"message":"La autorización fue cancelada."},status_code=400)
     if not expected or not state or not hmac.compare_digest(expected,state): return templates.TemplateResponse(request,"error.html",{"message":"La conexión expiró. Inténtalo nuevamente."},status_code=400)
-    granted_scopes={item.strip() for item in (scope or "").split(",")}
+    granted_scopes=parse_scopes(scope)
     if not granted_scopes.intersection({"activity:read", "activity:read_all"}):
         return templates.TemplateResponse(request,"error.html",{"message":"Radar Rudo necesita permiso para ver tus actividades públicas y para seguidores. Vuelve a conectar Strava y acepta la casilla de actividades.","retry_auth":True},status_code=400)
     try:
@@ -72,7 +73,7 @@ def callback(request:Request, code:str|None=None, state:str|None=None, error:str
     except StravaError as e: return templates.TemplateResponse(request,"error.html",{"message":str(e)},status_code=502)
     source=payload["athlete"]; athlete=db.scalar(select(Athlete).where(Athlete.strava_athlete_id==source["id"]))
     if not athlete: athlete=Athlete(strava_athlete_id=source["id"],firstname=source.get("firstname","Rudy"),lastname=source.get("lastname","")); db.add(athlete)
-    crypto=Crypto(); athlete.firstname=source.get("firstname","Rudy"); athlete.lastname=source.get("lastname",""); athlete.profile_url=source.get("profile"); athlete.access_token_encrypted=crypto.encrypt(token); athlete.refresh_token_encrypted=crypto.encrypt(payload["refresh_token"]); athlete.token_expires_at=datetime.fromtimestamp(payload["expires_at"],UTC); athlete.membership_checked_at=datetime.now(UTC); athlete.membership_check_error=None
+    crypto=Crypto(); athlete.firstname=source.get("firstname","Rudy"); athlete.lastname=source.get("lastname",""); athlete.profile_url=source.get("profile"); athlete.access_token_encrypted=crypto.encrypt(token); athlete.refresh_token_encrypted=crypto.encrypt(payload["refresh_token"]); athlete.token_expires_at=datetime.fromtimestamp(payload["expires_at"],UTC); athlete.authorized_scopes=",".join(sorted(granted_scopes)); athlete.membership_checked_at=datetime.now(UTC); athlete.membership_check_error=None
     try:
         clubs=client.clubs(token)
     except StravaError as e:
@@ -84,7 +85,7 @@ def callback(request:Request, code:str|None=None, state:str|None=None, error:str
         return templates.TemplateResponse(request,"not_member.html",{"verification_issue":False})
     athlete.membership_check_status="verified"; athlete.is_active=True; athlete.is_club_member=True; db.commit()
     stored_activities=db.scalar(select(func.count(Activity.id)).where(Activity.athlete_id==athlete.id)) or 0
-    lookback_days=settings.strava_initial_history_days if stored_activities == 0 else None
+    lookback_days=settings.strava_initial_history_days if stored_activities == 0 or requested_private else None
     try:
         count=sync_activities(db,athlete,StravaClient(),lookback_days=lookback_days) if settings.strava_sync_enabled else 0
     except StravaError:
