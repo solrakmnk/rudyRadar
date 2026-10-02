@@ -53,10 +53,10 @@ class StravaClient:
     base_url = "https://www.strava.com/api/v3"
     oauth_url = "https://www.strava.com/oauth"
     def __init__(self, client: httpx.Client | None = None): self.client = client or httpx.Client(timeout=15, follow_redirects=True)
-    def authorization_url(self, state: str, *, include_private: bool = False) -> str:
+    def authorization_url(self, state: str, *, include_private: bool = False, force_approval: bool = True) -> str:
         s = get_settings()
         scope = STRAVA_PRIVATE_SCOPE if include_private else STRAVA_VISIBLE_SCOPE
-        return str(httpx.URL(f"{self.oauth_url}/authorize", params={"client_id": s.strava_client_id, "redirect_uri": s.strava_redirect_uri, "response_type": "code", "approval_prompt": "force", "scope": scope, "state": state}))
+        return str(httpx.URL(f"{self.oauth_url}/authorize", params={"client_id": s.strava_client_id, "redirect_uri": s.strava_redirect_uri, "response_type": "code", "approval_prompt": "force" if force_approval else "auto", "scope": scope, "state": state}))
     def _request(self, method: str, path: str, **kwargs):
         try: r = self.client.request(method, f"{self.base_url}{path}", **kwargs)
         except httpx.TimeoutException as e: raise StravaError("Strava did not respond in time") from e

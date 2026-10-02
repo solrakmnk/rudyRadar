@@ -35,6 +35,11 @@ def test_authorization_can_request_private_activity_access():
     assert "activity%3Aread_all" in url
 
 
+def test_login_authorization_reuses_existing_approval():
+    url = StravaClient().authorization_url("state-value", force_approval=False)
+    assert "approval_prompt=auto" in url
+
+
 def test_parse_scopes_accepts_callback_and_token_formats():
     expected = {"read", "profile:read_all", "activity:read"}
     assert parse_scopes("read,profile:read_all,activity:read") == expected

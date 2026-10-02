@@ -37,7 +37,10 @@ logger=logging.getLogger(__name__)
 @app.get("/health")
 def health(): return {"status":"ok"}
 @app.get("/",response_class=HTMLResponse)
-def index(request: Request): return templates.TemplateResponse(request,"index.html")
+def index(request: Request, db: Session = Depends(get_db)):
+    athlete_id=request.session.get("athlete_id")
+    athlete=db.get(Athlete,athlete_id) if athlete_id else None
+    return templates.TemplateResponse(request,"index.html",{"has_session":bool(athlete and athlete.is_active and athlete.is_club_member)})
 @app.get("/language/{locale}")
 def language(request: Request, locale: str, next: str = "/"):
     request.session["locale"] = locale if locale in SUPPORTED_LOCALES else DEFAULT_LOCALE
@@ -57,8 +60,10 @@ def delete_my_data(request: Request, db: Session = Depends(get_db)):
     request.session.clear()
     return RedirectResponse("/?deleted=1", status_code=303)
 @app.get("/auth/strava")
-def auth(request:Request, include_private:bool=False):
-    state=secrets.token_urlsafe(32); request.session["oauth_state"]=state; request.session["oauth_include_private"]=include_private; return RedirectResponse(StravaClient().authorization_url(state,include_private=include_private))
+def auth(request:Request, include_private:bool=False, mode:str="register"):
+    if mode == "login" and request.session.get("athlete_id"):
+        return RedirectResponse("/radar",status_code=303)
+    state=secrets.token_urlsafe(32); request.session["oauth_state"]=state; request.session["oauth_include_private"]=include_private; return RedirectResponse(StravaClient().authorization_url(state,include_private=include_private,force_approval=mode != "login"))
 @app.get("/auth/strava/callback",response_class=HTMLResponse)
 def callback(request:Request, code:str|None=None, state:str|None=None, error:str|None=None, scope:str|None=None, db:Session=Depends(get_db)):
     expected=request.session.pop("oauth_state",None)
