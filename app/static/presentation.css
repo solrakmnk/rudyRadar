@@ -33,3 +33,4 @@
 
 .account-menu .scope-status { color:#72dca3; font-size:.78rem; }
 .privacy-note { margin:0 0 18px; padding:11px 14px; border:1px solid #294864; border-radius:10px; color:#9fb2c7; background:rgba(11,31,51,.55); font-size:.82rem; line-height:1.45; }.privacy-note a { color:#9fc8ff; }
+.type-breakdown { display:flex; flex-wrap:wrap; gap:.45rem; margin-top:.65rem; }.type-breakdown article { display:flex; align-items:center; gap:.45rem; padding:.4rem .55rem; border:1px solid rgba(133,183,228,.2); border-radius:10px; background:rgba(255,255,255,.035); }.type-breakdown article>span { font-size:1rem; }.type-breakdown div { display:grid; gap:.05rem; }.type-breakdown b { color:#dceafa; font-size:.72rem; }.type-breakdown small { color:#8fa8c1; font-size:.64rem; }.discipline-cardio { --discipline:#ff9d4d; }

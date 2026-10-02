@@ -9,7 +9,17 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.models import Activity, Athlete
 
-SPORTS = ("swim", "bike", "run", "walk", "strength", "wellbeing")
+SPORTS = ("swim", "bike", "run", "walk", "strength", "cardio", "wellbeing")
+
+ACTIVITY_TYPES = {
+    "Swim": ("Alberca", "🏊"), "open_water": ("Aguas abiertas", "🌊"),
+    "Ride": ("Ruta", "🚴"), "MountainBikeRide": ("MTB", "🚵"), "GravelRide": ("Gravel", "🪨"), "VirtualRide": ("Rodillo", "🌀"),
+    "Run": ("Carrera", "🏃"), "TrailRun": ("Trail", "⛰️"),
+    "Walk": ("Caminata", "🚶"), "Hike": ("Hiking", "🥾"),
+    "WeightTraining": ("Pesas", "🏋️"), "Crossfit": ("CrossFit", "🔥"), "HighIntensityIntervalTraining": ("HIIT", "⚡"), "Workout": ("Funcional", "💪"),
+    "Elliptical": ("Elíptica", "⭕"), "StairStepper": ("Escaladora", "🪜"), "Rowing": ("Remo", "🚣"), "IndoorRowing": ("Remo indoor", "🚣"),
+    "Yoga": ("Yoga", "🧘"), "Pilates": ("Pilates", "🤸"), "PhysicalTherapy": ("Recuperación", "🩹"),
+}
 
 
 def dashboard_sport(sport: str | None) -> str | None:
@@ -136,17 +146,22 @@ def discipline_leaderboards(db: Session, kind: str, now: datetime | None = None)
     return result
 
 
-def discipline_type_breakdown(db: Session, athlete_id: int, kind: str, now: datetime | None = None) -> dict[str, list[dict[str, str | int]]]:
+def discipline_type_breakdown(db: Session, athlete_id: int, kind: str, now: datetime | None = None) -> dict[str, list[dict[str, str | int | float]]]:
     """Show which exact Strava activity types compose each dashboard discipline."""
     start, end = period_bounds(kind, now or datetime.now(UTC))
     activities = db.scalars(select(Activity).where(Activity.athlete_id == athlete_id, Activity.start_date >= start, Activity.start_date < end, Activity.normalized_sport.is_not(None))).all()
-    counts: dict[tuple[str, str], int] = {}
+    totals: dict[tuple[str, str], dict[str, str | int | float]] = {}
     for item in activities:
         sport = dashboard_sport(item.normalized_sport)
         if sport in SPORTS:
-            key = (sport, item.sport_type)
-            counts[key] = counts.get(key, 0) + 1
-    return {sport: [{"type": activity_type, "count": count} for (row_sport, activity_type), count in sorted(counts.items()) if row_sport == sport] for sport in SPORTS}
+            activity_type = "open_water" if item.normalized_sport == "open_water" else item.sport_type
+            key = (sport, activity_type)
+            label, emoji = ACTIVITY_TYPES.get(activity_type, (activity_type, "•"))
+            row = totals.setdefault(key, {"type": activity_type, "label": label, "emoji": emoji, "count": 0, "moving_time_s": 0, "distance_m": 0.0})
+            row["count"] += 1
+            row["moving_time_s"] += item.moving_time_s
+            row["distance_m"] += item.distance_m
+    return {sport: [row for (row_sport, _), row in sorted(totals.items()) if row_sport == sport] for sport in SPORTS}
 
 
 def team_leaderboard(db: Session, kind: str, now: datetime | None = None) -> list[dict[str, str | int | float]]:
@@ -193,7 +208,7 @@ def rankings(db: Session, kind: str, now: datetime | None = None) -> dict[str, l
     for (sport, athlete_id), distance in totals.items():
         result[sport].append({"name": names[athlete_id], "distance_m": distance, "activity_count": counts[(sport, athlete_id)]})
     for sport in result:
-        metric = "activity_count" if sport in {"strength", "wellbeing"} else "distance_m"
+        metric = "activity_count" if sport in {"strength", "cardio", "wellbeing"} else "distance_m"
         result[sport].sort(key=lambda row: row[metric], reverse=True)
         result[sport] = result[sport][:3]
     return result
@@ -265,7 +280,7 @@ def team_group_stats(db: Session, kind: str, now: datetime | None = None) -> dic
     """Count members and activities for non-distance groups such as strength."""
     start, end = period_bounds(kind, now or datetime.now(UTC))
     activities = db.scalars(select(Activity).where(Activity.start_date >= start, Activity.start_date < end)).all()
-    result = {sport: {"participants": 0, "activities": 0} for sport in ("strength", "wellbeing")}
+    result = {sport: {"participants": 0, "activities": 0} for sport in ("strength", "cardio", "wellbeing")}
     for sport in result:
         matching = [activity for activity in activities if activity.normalized_sport == sport]
         result[sport] = {"participants": len({activity.athlete_id for activity in matching}), "activities": len(matching)}
