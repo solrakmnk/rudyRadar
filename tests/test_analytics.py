@@ -246,6 +246,7 @@ def test_discipline_leaderboards_keep_metrics_and_sports_separate(db):
     boards = discipline_leaderboards(db, "week", datetime(2026, 9, 30, tzinfo=UTC))
 
     assert boards["run"]["distance"][0]["name"] == "Carlos Runner"
+    assert boards["run"]["distance"][0]["athlete_id"] == carlos.id
     assert boards["run"]["time"][0]["name"] == "Ana Runner"
     assert [row["name"] for row in boards["bike"]["distance"]] == ["Ana Runner"]
 

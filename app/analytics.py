@@ -133,7 +133,7 @@ def discipline_leaderboards(db: Session, kind: str, now: datetime | None = None)
         if not athlete or sport not in SPORTS:
             continue
         key = (sport, item.athlete_id)
-        row = totals.setdefault(key, {"name": f"{athlete.firstname} {athlete.lastname}".strip(), "profile_url": athlete.profile_url or "", "distance_m": 0.0, "moving_time_s": 0, "activity_count": 0})
+        row = totals.setdefault(key, {"athlete_id": athlete.id, "name": f"{athlete.firstname} {athlete.lastname}".strip(), "profile_url": athlete.profile_url or "", "distance_m": 0.0, "moving_time_s": 0, "activity_count": 0})
         row["distance_m"] += item.distance_m
         row["moving_time_s"] += item.moving_time_s
         row["activity_count"] += 1

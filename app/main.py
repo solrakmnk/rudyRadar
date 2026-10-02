@@ -118,6 +118,15 @@ def radar(request: Request, period: str="week", sport: str|None=None, db: Sessio
     if period not in {"week","last_week","month","last_month","two_months_ago"}: period="week"
     count=request.session.pop("sync_count",None); discipline_stats=athlete_discipline_stats(db,athlete.id,period); requested_sport="swim" if sport=="open_water" else sport; default_sport=requested_sport if requested_sport in discipline_stats else max(discipline_stats,key=lambda item:discipline_stats[item]["activity_count"])
     return templates.TemplateResponse(request,"radar.html",{"athlete":athlete,"period":period,"stats":athlete_period_stats(db,athlete.id,period),"discipline_stats":discipline_stats,"discipline_comparisons":athlete_discipline_comparisons(db,athlete.id,period),"discipline_boards":discipline_leaderboards(db,period),"discipline_types":discipline_type_breakdown(db,athlete.id,period),"default_sport":default_sport,"rankings":rankings(db,period),"leaderboard":team_leaderboard(db,period),"comparison":period_comparison(db,athlete.id,period),"highlights":activity_highlights(db,athlete.id,kind=period),"team_highlights":team_highlights(db,kind=period),"team_overview":team_overview(db,period),"team_groups":team_group_stats(db,period),"sport_highlights":team_sport_highlights(db,kind=period),"includes_private":"activity:read_all" in parse_scopes(athlete.authorized_scopes),"sync_count":count})
+@app.get("/athletes/{athlete_id}",response_class=HTMLResponse)
+def athlete_detail(athlete_id:int, request:Request, period:str="week", db:Session=Depends(get_db)):
+    viewer_id=request.session.get("athlete_id")
+    viewer=db.get(Athlete,viewer_id) if viewer_id else None
+    if not viewer or not viewer.is_active or not viewer.is_club_member: return RedirectResponse("/",status_code=303)
+    athlete=db.get(Athlete,athlete_id)
+    if not athlete or not athlete.is_active or not athlete.is_club_member: raise HTTPException(404)
+    if period not in {"week","last_week","month","last_month","two_months_ago"}: period="week"
+    return templates.TemplateResponse(request,"athlete.html",{"athlete":athlete,"period":period,"stats":athlete_period_stats(db,athlete.id,period),"discipline_stats":athlete_discipline_stats(db,athlete.id,period),"discipline_types":discipline_type_breakdown(db,athlete.id,period)})
 def admin_ok(request:Request):
     supplied=request.headers.get("x-admin-secret",""); auth=request.headers.get("authorization","")
     if auth.startswith("Bearer "): supplied=auth.removeprefix("Bearer ")
