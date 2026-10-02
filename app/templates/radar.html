@@ -11,6 +11,7 @@
     <div><p class="eyebrow">TU RADAR</p><h1>Qué onda, <strong>{{ athlete.firstname }}.</strong></h1><p class="dashboard-kicker">Elige una disciplina. Mira tu avance. Encuentra a quién alcanzar.</p></div>
     <div class="tabs tabs--primary" aria-label="Periodo"><a data-period-link href="/radar?period=week&amp;sport={{ default_sport }}" class="{{ 'active' if period == 'week' }}">{{ t('this_week') }}</a><a data-period-link href="/radar?period=last_week&amp;sport={{ default_sport }}" class="{{ 'active' if period == 'last_week' }}">{{ t('last_week') }}</a><a data-period-link href="/radar?period=month&amp;sport={{ default_sport }}" class="{{ 'active' if period == 'month' }}">{{ t('this_month') }}</a><a data-period-link href="/radar?period=last_month&amp;sport={{ default_sport }}" class="{{ 'active' if period == 'last_month' }}">{{ t('last_month') }}</a><a data-period-link href="/radar?period=two_months_ago&amp;sport={{ default_sport }}" class="{{ 'active' if period == 'two_months_ago' }}">{{ t('two_months_ago') }}</a></div>
   </header>
+  <aside class="privacy-note">{{ t('visible_dashboard_note') }} <a href="/account">{{ t('review_access') }}</a></aside>
 
   <section class="overview overview-v2" aria-label="Resumen del periodo">
     <article class="overview-primary"><span>Tu tiempo en movimiento</span><b>{{ stats.moving_time_s|duration }}</b><em>Todo tu entrenamiento, sin mezclar distancias</em></article>

@@ -70,18 +70,15 @@ def delete_my_data(request: Request, db: Session = Depends(get_db)):
     request.session.clear()
     return RedirectResponse("/?deleted=1", status_code=303)
 @app.get("/auth/strava")
-def auth(request:Request, include_private:bool=False, mode:str="register"):
-    if mode == "login" and request.session.get("athlete_id"):
+def auth(request:Request, include_private:bool=False, remove_private:bool=False):
+    if not include_private and not remove_private and request.session.get("athlete_id"):
         return RedirectResponse("/radar",status_code=303)
-    # Without a local session the athlete is unknown until Strava returns them.
-    # Use the broad scope for login so an existing private grant is never
-    # silently replaced by a narrower token.
-    requested_private=include_private or mode == "login"
-    state=secrets.token_urlsafe(32); request.session["oauth_state"]=state; request.session["oauth_include_private"]=requested_private; return RedirectResponse(StravaClient().authorization_url(state,include_private=requested_private,force_approval=mode != "login"))
+    state=secrets.token_urlsafe(32); request.session["oauth_state"]=state; request.session["oauth_include_private"]=include_private; request.session["oauth_remove_private"]=remove_private; return RedirectResponse(StravaClient().authorization_url(state,include_private=include_private,force_approval=True))
 @app.get("/auth/strava/callback",response_class=HTMLResponse)
 def callback(request:Request, code:str|None=None, state:str|None=None, error:str|None=None, scope:str|None=None, db:Session=Depends(get_db)):
     expected=request.session.pop("oauth_state",None)
     requested_private=bool(request.session.pop("oauth_include_private",False))
+    remove_private=bool(request.session.pop("oauth_remove_private",False))
     if error: return templates.TemplateResponse(request,"error.html",{"message":"La autorización fue cancelada."},status_code=400)
     if not expected or not state or not hmac.compare_digest(expected,state): return templates.TemplateResponse(request,"error.html",{"message":"La conexión expiró. Inténtalo nuevamente."},status_code=400)
     granted_scopes=parse_scopes(scope)
@@ -104,9 +101,9 @@ def callback(request:Request, code:str|None=None, state:str|None=None, error:str
         return templates.TemplateResponse(request,"not_member.html",{"verification_issue":False})
     athlete.membership_check_status="verified"; athlete.is_active=True; athlete.is_club_member=True; db.commit()
     stored_activities=db.scalar(select(func.count(Activity.id)).where(Activity.athlete_id==athlete.id)) or 0
-    lookback_days=settings.strava_initial_history_days if stored_activities == 0 or requested_private else None
+    lookback_days=settings.strava_initial_history_days if stored_activities == 0 or requested_private or remove_private else None
     try:
-        count=sync_activities(db,athlete,StravaClient(),lookback_days=lookback_days) if settings.strava_sync_enabled else 0
+        count=sync_activities(db,athlete,StravaClient(),lookback_days=lookback_days,reconcile=remove_private) if settings.strava_sync_enabled else 0
     except StravaError:
         db.rollback(); logger.exception("Initial activity sync failed for athlete_id=%s",athlete.id)
         return templates.TemplateResponse(request,"error.html",{"message":"Strava autorizó tu cuenta, pero no permitió descargar las actividades públicas. Vuelve a conectar y acepta el permiso de actividades.","retry_auth":True},status_code=502)

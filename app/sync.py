@@ -36,18 +36,25 @@ def upsert_activity(db: Session, athlete: Athlete, item: dict) -> Activity:
     activity.manual = item.get("manual", False)
     activity.trainer = item.get("trainer", False)
     activity.commute = item.get("commute", False)
+    activity.visibility = item.get("visibility") or ("Only You" if item.get("private") else None)
     return activity
 
 
-def sync_activities(db: Session, athlete: Athlete, client: StravaClient, *, lookback_days: int | None = None) -> int:
+def sync_activities(db: Session, athlete: Athlete, client: StravaClient, *, lookback_days: int | None = None, reconcile: bool = False) -> int:
     """Backfill a bounded history once, then only refresh recent summaries."""
     token = get_valid_access_token(db, athlete, client)
     settings = get_settings()
     initial_history = athlete.history_synced_at is None
     days = lookback_days or (settings.strava_initial_history_days if initial_history else settings.strava_rolling_sync_days)
-    activities = client.activities(token, datetime.now(UTC) - timedelta(days=days))
+    cutoff = datetime.now(UTC) - timedelta(days=days)
+    activities = client.activities(token, cutoff)
     for item in activities:
         upsert_activity(db, athlete, item)
+    if reconcile:
+        visible_ids = {item["id"] for item in activities}
+        for stored in db.scalars(select(Activity).where(Activity.athlete_id == athlete.id, Activity.start_date >= cutoff)):
+            if stored.strava_activity_id not in visible_ids:
+                db.delete(stored)
     athlete.last_sync_at = datetime.now(UTC)
     if initial_history:
         athlete.history_synced_at = athlete.last_sync_at

@@ -50,6 +50,7 @@ class Activity(Base):
     manual: Mapped[bool] = mapped_column(Boolean, default=False)
     trainer: Mapped[bool] = mapped_column(Boolean, default=False)
     commute: Mapped[bool] = mapped_column(Boolean, default=False)
+    visibility: Mapped[str | None] = mapped_column(String(30), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     athlete: Mapped[Athlete] = relationship(back_populates="activities")
