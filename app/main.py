@@ -164,18 +164,24 @@ def process_webhook(payload: dict):
     try:
         athlete=db.scalar(select(Athlete).where(Athlete.strava_athlete_id==payload.get("owner_id"),Athlete.is_active.is_(True)))
         if not athlete: return
-        if payload.get("object_type") == "athlete" and payload.get("updates", {}).get("authorized") == "false":
+        authorized=payload.get("updates", {}).get("authorized")
+        if payload.get("object_type") == "athlete" and authorized in (False,"false"):
             db.delete(athlete); db.commit(); return
         if payload.get("object_type") != "activity": return
         activity_id=payload.get("object_id")
+        if not isinstance(activity_id,int): return
         if payload.get("aspect_type")=="delete":
             activity=db.scalar(select(Activity).where(Activity.strava_activity_id==activity_id))
-            if activity: db.delete(activity); db.commit()
+            if activity: db.delete(activity)
+            athlete.last_sync_at=datetime.now(UTC); db.commit()
             return
-        token=get_valid_access_token(db,athlete,StravaClient()); upsert_activity(db,athlete,StravaClient().activity(token,activity_id)); db.commit()
+        token=get_valid_access_token(db,athlete,StravaClient()); upsert_activity(db,athlete,StravaClient().activity(token,activity_id)); athlete.last_sync_at=datetime.now(UTC); db.commit()
+        logger.info("Processed Strava webhook aspect=%s athlete_id=%s activity_id=%s",payload.get("aspect_type"),athlete.id,activity_id)
     except Exception:
         db.rollback(); logger.exception("Strava webhook processing failed")
     finally: db.close()
 @app.post("/webhooks/strava",status_code=200)
 async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
-    payload=await request.json(); background_tasks.add_task(process_webhook,payload); return {"status":"accepted"}
+    payload=await request.json()
+    if not isinstance(payload,dict): raise HTTPException(400)
+    background_tasks.add_task(process_webhook,payload); return {"status":"accepted"}
