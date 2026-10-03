@@ -30,7 +30,7 @@ async def ensure_strava_webhook(client: httpx.AsyncClient | None = None) -> int 
         subscriptions = response.json()
         for subscription in subscriptions:
             if subscription.get("callback_url") == callback_url:
-                logger.info("Strava webhook subscription ready: id=%s", subscription.get("id"))
+                logger.warning("Strava webhook subscription ready: id=%s", subscription.get("id"))
                 return subscription.get("id")
         if subscriptions:
             logger.error("Strava already has a different webhook subscription; refusing to replace it")
@@ -47,7 +47,7 @@ async def ensure_strava_webhook(client: httpx.AsyncClient | None = None) -> int 
         )
         response.raise_for_status()
         subscription_id = response.json().get("id")
-        logger.info("Strava webhook subscription created: id=%s", subscription_id)
+        logger.warning("Strava webhook subscription created: id=%s", subscription_id)
         return subscription_id
     except (httpx.HTTPError, ValueError, TypeError):
         logger.exception("Unable to ensure Strava webhook subscription")
