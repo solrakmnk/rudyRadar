@@ -4,7 +4,7 @@ import logging
 from contextlib import asynccontextmanager, suppress
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
-from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -165,7 +165,7 @@ def report(period:str="week",db:Session=Depends(get_db)):
         else: lines.append("Sin actividades todavía")
     return "\n".join(lines)+"\n\n🔴🔵"
 @app.get("/webhooks/strava")
-def verify_webhook(hub_mode:str|None=None,hub_verify_token:str|None=None,hub_challenge:str|None=None):
+def verify_webhook(hub_mode:str|None=Query(None,alias="hub.mode"),hub_verify_token:str|None=Query(None,alias="hub.verify_token"),hub_challenge:str|None=Query(None,alias="hub.challenge")):
     if hub_mode=="subscribe" and settings.webhook_verify_token and hmac.compare_digest(hub_verify_token or "",settings.webhook_verify_token): return {"hub.challenge":hub_challenge}
     raise HTTPException(403)
 def process_webhook(payload: dict):

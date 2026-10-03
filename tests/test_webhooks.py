@@ -1,5 +1,7 @@
 from datetime import UTC, datetime
 
+from fastapi.testclient import TestClient
+
 from app import main
 from app.models import Activity, Athlete
 
@@ -22,6 +24,17 @@ def athlete(db, strava_id=9001):
 
 def use_test_db(monkeypatch, db):
     monkeypatch.setattr(main, "get_db", lambda: iter([db]))
+
+
+def test_webhook_verification_uses_strava_dotted_query_names(monkeypatch):
+    monkeypatch.setattr(main.settings, "webhook_verify_token", "expected-token")
+    with TestClient(main.app) as client:
+        response = client.get(
+            "/webhooks/strava",
+            params={"hub.mode": "subscribe", "hub.verify_token": "expected-token", "hub.challenge": "challenge-123"},
+        )
+    assert response.status_code == 200
+    assert response.json() == {"hub.challenge": "challenge-123"}
 
 
 def test_webhook_create_is_idempotent_and_updates_sync_time(db, monkeypatch):
