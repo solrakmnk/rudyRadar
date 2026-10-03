@@ -23,6 +23,11 @@ const renderComparison = (chart, metric) => {
 };
 
 document.addEventListener("DOMContentLoaded", () => {
+  document.querySelectorAll(".tabs--primary, .sport-tabs--large").forEach((group) => {
+    const active = group.querySelector(".active");
+    if (active) requestAnimationFrame(() => active.scrollIntoView({ behavior: "auto", block: "nearest", inline: "center" }));
+  });
+
   document.querySelectorAll("[data-sport-tab]").forEach((tab) => tab.addEventListener("click", () => {
     const sport = tab.dataset.sportTab;
     document.querySelectorAll("[data-sport-tab]").forEach((item) => {
@@ -39,6 +44,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const currentUrl = new URL(window.location.href);
     currentUrl.searchParams.set("sport", sport);
     window.history.replaceState({}, "", currentUrl.pathname + currentUrl.search);
+    tab.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
   }));
 
   document.querySelectorAll("[data-comparison-chart]").forEach((chart) => renderComparison(chart, chart.dataset.defaultMetric));

@@ -1,0 +1,20 @@
+{
+  "name": "Radar Rudo",
+  "short_name": "Radar Rudo",
+  "description": "El radar de actividad del equipo RUD@S.",
+  "lang": "es-MX",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#07111f",
+  "theme_color": "#07111f",
+  "icons": [
+    {
+      "src": "/static/rudos-logo.png",
+      "sizes": "600x600",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
