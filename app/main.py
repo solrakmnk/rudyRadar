@@ -1,6 +1,7 @@
 from __future__ import annotations
-import hashlib, hmac, secrets
+import asyncio, hashlib, hmac, secrets
 import logging
+from contextlib import asynccontextmanager, suppress
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request
@@ -17,8 +18,16 @@ from app.analytics import activity_highlights, athlete_discipline_comparisons, a
 from app.services import Crypto, StravaClient, StravaError, get_valid_access_token, is_club_member, parse_scopes
 from app.sync import sync_activities, upsert_activity
 from app.i18n import DEFAULT_LOCALE, SUPPORTED_LOCALES, preferred_locale, translate
+from app.webhooks import register_strava_webhook_after_startup
 
-settings=get_settings(); app=FastAPI(title="Radar Rudo"); app.add_middleware(SessionMiddleware, secret_key=settings.session_secret, https_only=settings.app_base_url.startswith("https://"), same_site="lax"); app.mount("/static",StaticFiles(directory="app/static"),name="static")
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    task=asyncio.create_task(register_strava_webhook_after_startup())
+    yield
+    task.cancel()
+    with suppress(asyncio.CancelledError): await task
+
+settings=get_settings(); app=FastAPI(title="Radar Rudo",lifespan=lifespan); app.add_middleware(SessionMiddleware, secret_key=settings.session_secret, https_only=settings.app_base_url.startswith("https://"), same_site="lax"); app.mount("/static",StaticFiles(directory="app/static"),name="static")
 def template_context(request: Request):
     locale = preferred_locale(request.query_params.get("lang"), request.session)
     request.session["locale"] = locale
