@@ -23,6 +23,12 @@ const renderComparison = (chart, metric) => {
 };
 
 document.addEventListener("DOMContentLoaded", () => {
+  const cleanUrl = new URL(window.location.href);
+  if (cleanUrl.searchParams.has("sport")) {
+    cleanUrl.searchParams.delete("sport");
+    window.history.replaceState({}, "", cleanUrl.pathname + cleanUrl.search);
+  }
+
   document.querySelectorAll(".tabs--primary, .sport-tabs--large").forEach((group) => {
     const active = group.querySelector(".active");
     if (active) requestAnimationFrame(() => active.scrollIntoView({ behavior: "auto", block: "nearest", inline: "center" }));
@@ -41,9 +47,6 @@ document.addEventListener("DOMContentLoaded", () => {
       url.searchParams.set("sport", sport);
       link.href = url.pathname + url.search;
     });
-    const currentUrl = new URL(window.location.href);
-    currentUrl.searchParams.set("sport", sport);
-    window.history.replaceState({}, "", currentUrl.pathname + currentUrl.search);
     tab.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
   }));
 
