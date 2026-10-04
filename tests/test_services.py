@@ -3,6 +3,7 @@ import httpx
 from app.config import get_settings
 from app.analytics import period_bounds
 from app.services import StravaClient, is_club_member, normalize_sport, parse_scopes
+from app.i18n import translate
 
 def test_normalize_sport():
     assert normalize_sport("Swim")=="swim"; assert normalize_sport("Swim", 2)=="open_water"; assert normalize_sport("OpenWaterSwim")=="open_water"; assert normalize_sport("WeightTraining")=="strength"; assert normalize_sport("Workout")=="strength"; assert normalize_sport("Yoga")=="wellbeing"; assert normalize_sport("Pilates")=="wellbeing"; assert normalize_sport("GravelRide")=="bike"; assert normalize_sport("TrailRun")=="run"; assert normalize_sport("Walk")=="walk"; assert normalize_sport("Hike")=="walk"; assert normalize_sport("Elliptical")=="cardio"; assert normalize_sport("StairStepper")=="cardio"
@@ -44,6 +45,13 @@ def test_parse_scopes_accepts_callback_and_token_formats():
     expected = {"read", "profile:read_all", "activity:read"}
     assert parse_scopes("read,profile:read_all,activity:read") == expected
     assert parse_scopes("read profile:read_all activity:read") == expected
+
+
+def test_dashboard_and_activity_type_copy_is_translated():
+    assert translate("es", "discipline_totals") == "Totales por disciplina"
+    assert translate("en", "discipline_totals") == "Totals by discipline"
+    assert translate("es", "type_pool_swim") == "Alberca"
+    assert translate("en", "type_pool_swim") == "Pool"
 
 
 def test_clubs_requests_all_pages():

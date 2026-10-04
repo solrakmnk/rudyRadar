@@ -12,13 +12,13 @@ from app.models import Activity, Athlete
 SPORTS = ("swim", "bike", "run", "walk", "strength", "cardio", "wellbeing")
 
 ACTIVITY_TYPES = {
-    "Swim": ("Alberca", "🏊"), "open_water": ("Aguas abiertas", "🌊"),
-    "Ride": ("Ruta", "🚴"), "MountainBikeRide": ("MTB", "🚵"), "GravelRide": ("Gravel", "🪨"), "VirtualRide": ("Rodillo", "🌀"),
-    "Run": ("Carrera", "🏃"), "TrailRun": ("Trail", "⛰️"),
-    "Walk": ("Caminata", "🚶"), "Hike": ("Hiking", "🥾"),
-    "WeightTraining": ("Pesas", "🏋️"), "Crossfit": ("CrossFit", "🔥"), "HighIntensityIntervalTraining": ("HIIT", "⚡"), "Workout": ("Funcional", "💪"),
-    "Elliptical": ("Elíptica", "⭕"), "StairStepper": ("Escaladora", "🪜"), "Rowing": ("Remo", "🚣"), "IndoorRowing": ("Remo indoor", "🚣"),
-    "Yoga": ("Yoga", "🧘"), "Pilates": ("Pilates", "🤸"), "PhysicalTherapy": ("Recuperación", "🩹"),
+    "Swim": ("type_pool_swim", "🏊"), "open_water": ("open_water", "🌊"),
+    "Ride": ("type_road", "🚴"), "MountainBikeRide": ("type_mtb", "🚵"), "GravelRide": ("type_gravel", "🪨"), "VirtualRide": ("type_trainer", "🌀"),
+    "Run": ("type_run", "🏃"), "TrailRun": ("type_trail", "⛰️"),
+    "Walk": ("type_walk", "🚶"), "Hike": ("type_hike", "🥾"),
+    "WeightTraining": ("type_weights", "🏋️"), "Crossfit": ("type_crossfit", "🔥"), "HighIntensityIntervalTraining": ("type_hiit", "⚡"), "Workout": ("type_functional", "💪"),
+    "Elliptical": ("type_elliptical", "⭕"), "StairStepper": ("type_stair", "🪜"), "Rowing": ("type_row", "🚣"), "IndoorRowing": ("type_indoor_row", "🚣"),
+    "Yoga": ("type_yoga", "🧘"), "Pilates": ("type_pilates", "🤸"), "PhysicalTherapy": ("type_recovery", "🩹"),
 }
 
 
@@ -148,6 +148,12 @@ def team_active_members(db: Session, kind: str, now: datetime | None = None) -> 
         own = [item for item in activities if item.athlete_id == athlete.id]
         rows.append({"athlete_id": athlete.id, "name": f"{athlete.firstname} {athlete.lastname}".strip(), "profile_url": athlete.profile_url or "", "activity_count": len(own), "moving_time_s": sum(item.moving_time_s for item in own)})
     return sorted(rows, key=lambda row: (row["activity_count"] == 0, -int(row["moving_time_s"]), str(row["name"])))
+
+
+def team_discipline_members(db: Session, kind: str, now: datetime | None = None) -> dict[str, list[dict[str, str | int | float]]]:
+    """List verified participants and their totals independently for each discipline."""
+    boards = discipline_leaderboards(db, kind, now)
+    return {sport: boards[sport]["time"] for sport in SPORTS}
 
 
 def discipline_leaderboards(db: Session, kind: str, now: datetime | None = None) -> dict[str, dict[str, list[dict[str, str | int | float]]]]:

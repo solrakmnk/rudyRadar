@@ -14,7 +14,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from app.config import get_settings
 from app.database import get_db
 from app.models import Activity, Athlete
-from app.analytics import activity_highlights, athlete_discipline_comparisons, athlete_discipline_stats, athlete_period_stats, discipline_leaderboards, discipline_type_breakdown, period_comparison, rankings, team_active_members, team_discipline_comparisons, team_group_stats, team_highlights, team_leaderboard, team_overview, team_sport_highlights
+from app.analytics import activity_highlights, athlete_discipline_comparisons, athlete_discipline_stats, athlete_period_stats, discipline_leaderboards, discipline_type_breakdown, period_comparison, rankings, team_active_members, team_discipline_comparisons, team_discipline_members, team_group_stats, team_highlights, team_leaderboard, team_overview, team_sport_highlights
 from app.services import Crypto, StravaClient, StravaError, get_valid_access_token, is_club_member, parse_scopes
 from app.sync import sync_activities, upsert_activity
 from app.i18n import DEFAULT_LOCALE, SUPPORTED_LOCALES, preferred_locale, translate
@@ -31,7 +31,8 @@ settings=get_settings(); app=FastAPI(title="Radar Rudo",lifespan=lifespan); app.
 def template_context(request: Request):
     locale = preferred_locale(request.query_params.get("lang"), request.session)
     request.session["locale"] = locale
-    return {"locale": locale, "t": lambda key, **values: translate(locale, key, **values)}
+    current_url=request.url.path+(f"?{request.url.query}" if request.url.query else "")
+    return {"locale": locale, "current_url": current_url, "t": lambda key, **values: translate(locale, key, **values)}
 templates=Jinja2Templates(directory="app/templates", context_processors=[template_context])
 def mexico_time(value: datetime) -> str:
     return value.astimezone(ZoneInfo(settings.app_timezone)).strftime("%d/%m · %H:%M")
@@ -126,7 +127,7 @@ def radar(request: Request, period: str="week", sport: str|None=None, db: Sessio
     if not athlete or not athlete.is_active or not athlete.is_club_member: return RedirectResponse("/",status_code=303)
     if period not in {"week","last_week","month","last_month","two_months_ago"}: period="week"
     count=request.session.pop("sync_count",None); discipline_stats=athlete_discipline_stats(db,athlete.id,period); requested_sport="swim" if sport=="open_water" else sport; default_sport=requested_sport if requested_sport in discipline_stats else "swim"
-    return templates.TemplateResponse(request,"radar.html",{"athlete":athlete,"period":period,"stats":athlete_period_stats(db,athlete.id,period),"discipline_stats":discipline_stats,"discipline_comparisons":athlete_discipline_comparisons(db,athlete.id,period),"discipline_boards":discipline_leaderboards(db,period),"discipline_types":discipline_type_breakdown(db,athlete.id,period),"default_sport":default_sport,"rankings":rankings(db,period),"leaderboard":team_leaderboard(db,period),"comparison":period_comparison(db,athlete.id,period),"highlights":activity_highlights(db,athlete.id,kind=period),"team_highlights":team_highlights(db,kind=period),"team_overview":team_overview(db,period),"team_groups":team_group_stats(db,period),"team_discipline_comparisons":team_discipline_comparisons(db,period),"team_members":team_active_members(db,period),"sport_highlights":team_sport_highlights(db,kind=period),"includes_private":"activity:read_all" in parse_scopes(athlete.authorized_scopes),"sync_count":count})
+    return templates.TemplateResponse(request,"radar.html",{"athlete":athlete,"period":period,"stats":athlete_period_stats(db,athlete.id,period),"discipline_stats":discipline_stats,"discipline_comparisons":athlete_discipline_comparisons(db,athlete.id,period),"discipline_boards":discipline_leaderboards(db,period),"discipline_types":discipline_type_breakdown(db,athlete.id,period),"default_sport":default_sport,"rankings":rankings(db,period),"leaderboard":team_leaderboard(db,period),"comparison":period_comparison(db,athlete.id,period),"highlights":activity_highlights(db,athlete.id,kind=period),"team_highlights":team_highlights(db,kind=period),"team_overview":team_overview(db,period),"team_groups":team_group_stats(db,period),"team_discipline_comparisons":team_discipline_comparisons(db,period),"team_discipline_members":team_discipline_members(db,period),"team_members":team_active_members(db,period),"sport_highlights":team_sport_highlights(db,kind=period),"includes_private":"activity:read_all" in parse_scopes(athlete.authorized_scopes),"sync_count":count})
 @app.get("/athletes/{athlete_id}",response_class=HTMLResponse)
 def athlete_detail(athlete_id:int, request:Request, period:str="week", db:Session=Depends(get_db)):
     viewer_id=request.session.get("athlete_id")

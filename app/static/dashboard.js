@@ -1,6 +1,6 @@
 const formatMetric = (metric, value) => {
   if (metric === "distance") return `${value.toFixed(1)} km`;
-  if (metric === "activities") return `${Math.round(value)} sesiones`;
+  if (metric === "activities") return `${Math.round(value)} ${document.body.dataset.sessions}`;
   const minutes = Math.round(value);
   return minutes >= 60 ? `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, "0")}m` : `${minutes}m`;
 };
@@ -14,11 +14,12 @@ const renderComparison = (chart, metric) => {
   chart.querySelector('[data-value="current"]').textContent = formatMetric(metric, current);
   chart.querySelector('[data-value="previous"]').textContent = formatMetric(metric, previous);
   const insight = chart.parentElement.querySelector("[data-chart-insight]");
-  if (!previous && current) insight.textContent = "Nuevo punto de partida. Ya tienes una marca para superar.";
-  else if (!previous && !current) insight.textContent = "Tu próxima sesión abre esta comparación.";
+  if (!previous && current) insight.textContent = document.body.dataset.insightNew;
+  else if (!previous && !current) insight.textContent = document.body.dataset.insightEmpty;
   else {
     const change = Math.round((current - previous) / previous * 100);
-    insight.textContent = change > 0 ? `Vas ${change}% arriba del periodo anterior.` : change < 0 ? `Estás ${Math.abs(change)}% abajo. Todavía hay tiempo para responder.` : "Vas exactamente al ritmo del periodo anterior.";
+    const template = change > 0 ? document.body.dataset.insightUp : change < 0 ? document.body.dataset.insightDown : document.body.dataset.insightEven;
+    insight.textContent = template.replace("{change}", Math.abs(change));
   }
 };
 
@@ -69,6 +70,6 @@ document.addEventListener("DOMContentLoaded", () => {
     const expanded = button.getAttribute("aria-expanded") === "true";
     list.querySelectorAll("[data-board-extra]").forEach((row) => row.hidden = expanded);
     button.setAttribute("aria-expanded", String(!expanded));
-    button.textContent = expanded ? `Ver todos (${button.dataset.total})` : "Ver menos";
+    button.textContent = expanded ? `${button.dataset.showAll} (${button.dataset.total})` : button.dataset.showLess;
   }));
 });

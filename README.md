@@ -29,7 +29,7 @@ Por defecto `STRAVA_SYNC_ENABLED=false`: OAuth y validación de club están impl
 
 Crea un servicio PostgreSQL y un servicio desde este repositorio usando el Dockerfile. Copia las variables de `.env.example`, reemplaza `DATABASE_URL` por la que entrega Railway y ajusta `APP_BASE_URL` y `STRAVA_REDIRECT_URI` a HTTPS. Ejecuta `alembic upgrade head` una vez desde el shell de Railway antes de habilitar tráfico.
 
-El contenedor ejecuta `alembic upgrade head` antes de iniciar la aplicación, por lo que cada despliegue aplica las migraciones pendientes. Configura un Cron Job de Railway cada 6 horas con `python -m app.cli`; sincroniza los atletas activos y evita depender exclusivamente de webhooks. Para sincronización cercana a tiempo real registra `https://<dominio>/webhooks/strava` como callback de Strava y define `WEBHOOK_VERIFY_TOKEN`. Los webhooks `create`, `update` y `delete` son idempotentes y la app consulta Strava para obtener la actividad completa antes de persistirla.
+El contenedor ejecuta `alembic upgrade head` antes de iniciar la aplicación, por lo que cada despliegue aplica las migraciones pendientes. Los webhooks de Strava son la fuente principal de actualizaciones; `https://<dominio>/webhooks/strava` debe estar registrado como callback y `WEBHOOK_VERIFY_TOKEN` debe estar definido. Los eventos `create`, `update` y `delete` son idempotentes y la app consulta Strava para obtener la actividad completa antes de persistirla. Un Cron Job de Railway con `python -m app.cli` corre cada 2 horas únicamente como reconciliación de respaldo.
 
 ## Entrega continua
 

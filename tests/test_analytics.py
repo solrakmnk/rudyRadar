@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from app.analytics import activity_highlights, athlete_discipline_comparisons, athlete_discipline_stats, athlete_period_stats, discipline_leaderboards, monthly_comparison, period_comparison, rankings, team_active_members, team_discipline_comparisons, team_group_stats, team_highlights, team_leaderboard, team_overview, team_sport_highlights, weekly_comparison
+from app.analytics import activity_highlights, athlete_discipline_comparisons, athlete_discipline_stats, athlete_period_stats, discipline_leaderboards, monthly_comparison, period_comparison, rankings, team_active_members, team_discipline_comparisons, team_discipline_members, team_group_stats, team_highlights, team_leaderboard, team_overview, team_sport_highlights, weekly_comparison
 from app.models import Activity, Athlete
 
 
@@ -177,6 +177,25 @@ def test_discipline_leaderboard_keeps_every_participant(db):
 
     assert len(board["swim"]["distance"]) == 6
     assert board["swim"]["distance"][-1]["name"] == "Atleta 1 Runner"
+
+
+def test_team_discipline_members_only_lists_people_in_that_discipline(db):
+    carlos, ana = athlete(1, "Carlos"), athlete(2, "Ana")
+    carlos.is_active = ana.is_active = True
+    carlos.is_club_member = ana.is_club_member = True
+    db.add_all([
+        carlos,
+        ana,
+        activity(carlos, 11, "swim", 2_000, datetime(2026, 9, 29, 15, tzinfo=UTC)),
+        activity(ana, 12, "bike", 20_000, datetime(2026, 9, 29, 15, tzinfo=UTC)),
+    ])
+    db.commit()
+
+    members = team_discipline_members(db, "week", datetime(2026, 9, 30, tzinfo=UTC))
+
+    assert [row["name"] for row in members["swim"]] == ["Carlos Runner"]
+    assert [row["name"] for row in members["bike"]] == ["Ana Runner"]
+    assert members["run"] == []
 
 
 def test_last_week_comparison_uses_the_week_before_it(db):
