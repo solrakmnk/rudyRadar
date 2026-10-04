@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% from '_comparison.html' import period_bars %}
+{% from '_comparison.html' import period_bars with context %}
 {% block body %}
 {% set non_distance = ['strength','cardio','wellbeing'] %}
 {% set sports = [('swim',t('swim'),'🏊',t('desc_swim')),('bike',t('bike'),'🚴',t('desc_bike')),('run',t('run'),'🏃',t('desc_run')),('walk',t('walk'),'🥾',t('desc_walk')),('strength',t('strength'),'🏋️',t('desc_strength')),('cardio',t('cardio'),'⭕',t('desc_cardio')),('wellbeing',t('wellbeing'),'🧘',t('desc_wellbeing'))] %}
