@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager, suppress
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select
@@ -18,6 +18,7 @@ from app.analytics import activity_highlights, athlete_discipline_comparisons, a
 from app.services import Crypto, StravaClient, StravaError, get_valid_access_token, is_club_member, parse_scopes
 from app.sync import sync_activities, upsert_activity
 from app.i18n import DEFAULT_LOCALE, SUPPORTED_LOCALES, preferred_locale, translate
+from app.exports import athlete_data_export
 from app.webhooks import register_strava_webhook_after_startup
 
 @asynccontextmanager
@@ -67,6 +68,16 @@ def account(request: Request, db: Session = Depends(get_db)):
     athlete=db.get(Athlete,athlete_id) if athlete_id else None
     if not athlete or not athlete.is_active or not athlete.is_club_member: return RedirectResponse("/",status_code=303)
     return templates.TemplateResponse(request,"account.html",{"athlete":athlete,"includes_private":"activity:read_all" in parse_scopes(athlete.authorized_scopes)})
+@app.get("/account/export")
+def export_my_data(request: Request, db: Session = Depends(get_db)):
+    athlete_id=request.session.get("athlete_id")
+    athlete=db.get(Athlete,athlete_id) if athlete_id else None
+    if not athlete or not athlete.is_active or not athlete.is_club_member: return RedirectResponse("/",status_code=303)
+    activities=list(db.scalars(select(Activity).where(Activity.athlete_id==athlete.id).order_by(Activity.start_date.desc())))
+    response=JSONResponse(athlete_data_export(athlete,activities))
+    response.headers["Content-Disposition"]='attachment; filename="radar-rudo-my-data.json"'
+    response.headers["Cache-Control"]="no-store"
+    return response
 @app.post("/privacy/delete")
 def delete_my_data(request: Request, db: Session = Depends(get_db)):
     athlete_id = request.session.get("athlete_id")

@@ -45,11 +45,11 @@ Estas funciones y la retención anual son el principal riesgo de rechazo. Antes 
 | Confirmación de eliminación | Implementado | Mensaje visible después de borrar la cuenta. |
 | Contacto de soporte visible | Implementado | Correo en la política de privacidad. |
 | Seguridad | Implementado | Tokens cifrados, secretos fuera del repositorio y sesiones seguras en HTTPS. |
-| Branding oficial | Pendiente | Sustituir o complementar los CTA de OAuth con el recurso oficial “Connect with Strava”; revisar la atribución “Compatible with Strava”. |
+| Branding oficial | Implementado | El registro usa el SVG naranja oficial “Connect with Strava” sin modificaciones y enlaza al flujo OAuth. |
 | Visualización limitada al usuario autenticado | **No cumple actualmente** | Rankings, perfiles y panel del equipo muestran datos de otros atletas. |
 | Analítica agregada | **No cumple actualmente** | Totales del equipo, rankings, historias y comparativos se derivan de datos de varios atletas; revisar sección 5.4. |
 | Retención máxima de siete días | **No cumple actualmente** | El producto conserva un año para comparaciones históricas; revisar secciones 6.2 y 6.4. |
-| Acceso del usuario a los datos recopilados | Parcial | El panel muestra resúmenes; documentar el proceso de exportación o entrega bajo solicitud. |
+| Acceso del usuario a los datos recopilados | Implementado | Configuración permite descargar un JSON con el perfil y todos los resúmenes conservados, sin incluir credenciales. |
 | Enlace a la cuenta de Strava | Implementado | Configuración incluye un enlace directo a las aplicaciones conectadas de Strava. |
 | Aviso de monitoreo de uso | Implementado | La política de privacidad informa que Strava puede monitorear datos de uso de la API. |
 

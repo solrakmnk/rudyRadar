@@ -4,6 +4,7 @@
   <p class="team">RUD@S / {{ t('product') }}</p>
   <h1>{{ t('account_settings') }}</h1>
   <section><h2>{{ t('strava_access') }}</h2><p>{% if includes_private %}{{ t('private_scope_active') }}{% else %}{{ t('visible_scope_active') }}{% endif %}</p><p>{{ t('totals_only_note') }}</p>{% if includes_private %}<p><a href="/auth/strava?remove_private=true">{{ t('disable_private') }}</a></p>{% else %}<p><a class="button" href="/auth/strava?include_private=true">{{ t('enable_private') }}</a></p>{% endif %}<p><a href="https://www.strava.com/settings/apps" rel="external noopener">{{ t('manage_strava') }} ↗</a></p></section>
+  <section><h2>{{ t('your_data') }}</h2><p>{{ t('data_export_explanation') }}</p><p><a class="button" href="/account/export">{{ t('download_my_data') }}</a></p></section>
   <section><h2>{{ t('session') }}</h2><p><a href="/logout">{{ t('logout') }}</a></p></section>
   <section class="danger-zone"><h2>{{ t('danger_zone') }}</h2><p>{{ t('delete_account_explanation') }}</p><form method="post" action="/privacy/delete" onsubmit="return confirm('{{ t('delete_confirm') }}')"><button type="submit">{{ t('delete_data') }}</button></form></section>
   <p><a href="/radar">{{ t('back_to_radar') }}</a></p>

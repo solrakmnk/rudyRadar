@@ -21,6 +21,9 @@
 .connect-primary:hover { background: #e94400; transform: translateY(-1px); }
 .quick-connect > small { color: #91a8bf; }
 .register-link { width:max-content; margin-top:10px; color:#dbeaff; font-weight:750; text-underline-offset:4px; }
+.strava-register { width:max-content; margin-top:10px; border-radius:4px; line-height:0; }
+.strava-register img { display:block; width:auto; height:48px; }
+.strava-register:focus-visible { outline:3px solid #9fc8ff; outline-offset:4px; }
 
 .access-choice {
   display: grid;
