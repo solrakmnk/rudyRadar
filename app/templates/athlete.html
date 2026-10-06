@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% from '_comparison.html' import period_bars %}
+{% from '_comparison.html' import period_bars with context %}
 {% block body %}
 {% set sports = [('swim',t('swim'),'🏊'),('bike',t('bike'),'🚴'),('run',t('run'),'🏃'),('walk',t('walk'),'🥾'),('strength',t('strength'),'🏋️'),('cardio',t('cardio'),'⭕'),('wellbeing',t('wellbeing'),'🧘')] %}
 <main class="athlete-detail">
