@@ -1,0 +1,39 @@
+{% extends 'base.html' %}
+{% block body %}
+<main class="policy support-page">
+  <header class="support-header">
+    <p class="team"><img class="support-mark" src="/static/rudos-logo.png" alt="RUD@S"> RUD@S / {{ t('product') }}</p>
+    <p class="eyebrow">{{ t('support_eyebrow') }}</p>
+    <h1>{{ t('support_title') }}</h1>
+    <p class="intro">{{ t('support_intro') }}</p>
+    <p>{{ t('support_contact_intro') }}</p>
+    <a class="support-whatsapp" href="https://wa.me/525623191530?text=Hola%20Rudy%2C%20necesito%20ayuda%20con%20Radar%20Rudo." target="_blank" rel="noopener noreferrer">{{ t('support_whatsapp') }} <span aria-hidden="true">↗</span></a>
+  </header>
+
+  <section>
+    <h2>{{ t('support_help_title') }}</h2>
+    <ul class="support-list">
+      <li>{{ t('support_help_connect') }}</li>
+      <li>{{ t('support_help_permissions') }}</li>
+      <li>{{ t('support_help_activities') }}</li>
+      <li>{{ t('support_help_access') }}</li>
+      <li>{{ t('support_help_delete') }}</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>{{ t('support_privacy_title') }}</h2>
+    <p>{{ t('support_privacy_data') }}</p>
+    <p>{{ t('support_privacy_visibility') }}</p>
+    <p><a href="/privacy">{{ t('support_privacy_link') }}</a></p>
+  </section>
+
+  <section>
+    <h2>{{ t('support_account_title') }}</h2>
+    <p>{{ t('support_account_text') }}</p>
+  </section>
+
+  <p><a href="/">← {{ t('back') }}</a></p>
+  <footer class="support-signoff">{{ t('support_signoff') }}</footer>
+</main>
+{% endblock %}

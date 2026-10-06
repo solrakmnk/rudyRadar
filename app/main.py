@@ -58,6 +58,8 @@ def language(request: Request, locale: str, next: str = "/"):
     return RedirectResponse(next if next.startswith("/") and not next.startswith("//") else "/", status_code=303)
 @app.get("/privacy", response_class=HTMLResponse)
 def privacy(request: Request): return templates.TemplateResponse(request, "privacy.html")
+@app.get("/support", response_class=HTMLResponse)
+def support(request: Request): return templates.TemplateResponse(request, "support.html")
 @app.get("/logout")
 def logout(request: Request):
     request.session.clear()

@@ -72,6 +72,36 @@ MESSAGES["en"].update({
     "strava_connected": "Strava connected.", "purposeful_data": "Performance data with purpose.", "reconnect_strava": "Reconnect Strava", "manage_strava": "Manage my connection on Strava", "your_data": "Your data", "data_export_explanation": "Download a copy of the profile data and activity summaries Radar stores about you. The download does not include tokens or secrets.", "download_my_data": "Download my data", "support_contact": "Support and data requests: solrak.m@gmail.com", "deletion_complete": "Your Radar Rudo account and all its data were deleted successfully.", "privacy_strava_monitoring": "Strava may monitor and collect API usage data for its own purposes under its API Policy.",
 })
 
+MESSAGES["es"].update({
+    "support": "Soporte", "support_eyebrow": "ESTAMOS PARA AYUDARTE", "support_title": "Soporte de Radar Rudo",
+    "support_intro": "¿Tuviste algún problema al conectar tu cuenta de Strava o al utilizar Radar Rudo?",
+    "support_contact_intro": "Si necesitas ayuda con tu registro, permisos de Strava, sincronización de actividades o eliminación de tu cuenta, puedes comunicarte directamente con nosotros por WhatsApp.",
+    "support_whatsapp": "Contactar por WhatsApp", "support_help_title": "¿Con qué te podemos ayudar?",
+    "support_help_connect": "Problemas para conectar Strava.", "support_help_permissions": "Dudas sobre los permisos solicitados.",
+    "support_help_activities": "Actividades que no aparecen o no se contabilizan.", "support_help_access": "Problemas para acceder a Radar Rudo.",
+    "support_help_delete": "Solicitud de eliminación de cuenta y datos.", "support_privacy_title": "Privacidad y control",
+    "support_privacy_data": "Radar Rudo utiliza los datos autorizados por cada atleta para calcular estadísticas agregadas de entrenamiento. Por defecto se contabilizan únicamente las actividades disponibles mediante los permisos estándar concedidos por el atleta. Las actividades configuradas como ‘Solo tú’ no se incluyen salvo que el propio atleta habilite posteriormente ese acceso.",
+    "support_privacy_visibility": "Radar Rudo no muestra a otros integrantes rutas, horarios, nombres de actividades ni actividades individuales.",
+    "support_privacy_link": "Consultar la Política de Privacidad", "support_account_title": "Cuenta y conexión",
+    "support_account_text": "Después de iniciar sesión, puedes desconectar Strava o eliminar tu cuenta y tus datos desde Configuración de cuenta.",
+    "support_signoff": "Radar Rudo · Proyecto para integrantes de RUD@S",
+})
+
+MESSAGES["en"].update({
+    "support": "Support", "support_eyebrow": "WE'RE HERE TO HELP", "support_title": "Radar Rudo Support",
+    "support_intro": "Did you have trouble connecting your Strava account or using Radar Rudo?",
+    "support_contact_intro": "If you need help with registration, Strava permissions, activity synchronization, or account deletion, you can contact us directly through WhatsApp.",
+    "support_whatsapp": "Contact us on WhatsApp", "support_help_title": "How can we help?",
+    "support_help_connect": "Problems connecting Strava.", "support_help_permissions": "Questions about the requested permissions.",
+    "support_help_activities": "Activities that are missing or not being counted.", "support_help_access": "Problems accessing Radar Rudo.",
+    "support_help_delete": "Account and data deletion requests.", "support_privacy_title": "Privacy and control",
+    "support_privacy_data": "Radar Rudo uses the data authorized by each athlete to calculate aggregated training statistics. By default, only activities available through the standard permissions granted by the athlete are counted. Activities configured as ‘Only You’ are not included unless the athlete later enables that access.",
+    "support_privacy_visibility": "Radar Rudo does not show other members routes, schedules, activity names, or individual activities.",
+    "support_privacy_link": "Read the Privacy Policy", "support_account_title": "Account and connection",
+    "support_account_text": "After signing in, you can disconnect Strava or delete your account and data from Account settings.",
+    "support_signoff": "Radar Rudo · A project for RUD@S members",
+})
+
 
 def translate(locale: str, key: str, **values: object) -> str:
     message = MESSAGES.get(locale, MESSAGES[DEFAULT_LOCALE]).get(key, MESSAGES[DEFAULT_LOCALE].get(key, key))
