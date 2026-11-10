@@ -11,12 +11,12 @@ from app.models import Activity, Athlete, StravaWebhookEvent
 from app.services import StravaAuthError, StravaClient, StravaForbiddenError, StravaRateLimitError, StravaTransientError
 from app.strava_events import process_due_events, process_event, record_event
 from tests.test_initial_import import app_client  # noqa: F401  (fixture)
-from tests.test_strava_events import FakeClient, make_athlete, summary
+from tests.test_strava_events import BASE_TIME, FakeClient, make_athlete, summary
 
 
 def deliver(db, aspect="update", object_id=123, owner=9001, event_time=1000, object_type="activity", updates=None, subscription_id=7):
     stored, is_new = record_event(db, {"object_type": object_type, "aspect_type": aspect, "object_id": object_id, "owner_id": owner,
-                                       "event_time": event_time, "subscription_id": subscription_id, "updates": updates or {}})
+                                       "event_time": BASE_TIME + event_time, "subscription_id": subscription_id, "updates": updates or {}})
     return stored, is_new
 
 
@@ -118,10 +118,10 @@ def test_endpoint_stores_events_while_subscription_is_unknown_and_rejects_missin
     monkeypatch.setattr(main, "get_db", lambda: iter([db]))
     monkeypatch.setattr(main, "process_event_in_new_session", lambda event_id: None)
     client = TestClient(main.app)
-    base = {"object_type": "activity", "aspect_type": "create", "object_id": 5, "owner_id": 1, "event_time": 1}
+    base = {"object_type": "activity", "aspect_type": "create", "object_id": 5, "owner_id": 1, "event_time": BASE_TIME}
 
     assert client.post("/webhooks/strava", json={**base, "subscription_id": 7}).json() == {"status": "accepted"}
-    assert client.post("/webhooks/strava", json={**base, "event_time": 2}).json() == {"status": "ignored"}
+    assert client.post("/webhooks/strava", json={**base, "event_time": BASE_TIME + 1}).json() == {"status": "ignored"}
     assert db.query(StravaWebhookEvent).count() == 1
 
 
@@ -198,7 +198,7 @@ def club_client(status, requests):
     def handler(request):
         requests.append(request.url.path)
         if request.url.path.endswith("/athlete/clubs"):
-            return httpx.Response(status, headers={"X-RateLimit-Limit": "200,2000", "X-RateLimit-Usage": "200,300"}, json={"message": "x"})
+            return httpx.Response(status, headers={"X-RateLimit-Limit": "200,2000", "X-RateLimit-Usage": "20,300"}, json={"message": "x"})
         return httpx.Response(200, json={"id": 1, "clubs": [{"id": 1187973}]})
     return StravaClient(httpx.Client(transport=httpx.MockTransport(handler)))
 

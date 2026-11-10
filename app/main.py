@@ -1,5 +1,5 @@
 from __future__ import annotations
-import asyncio, hashlib, hmac, os, secrets
+import asyncio, hashlib, hmac, json, os, secrets
 import logging
 from contextlib import asynccontextmanager, suppress
 from datetime import UTC, datetime
@@ -19,7 +19,7 @@ from app.analytics import activity_highlights, athlete_discipline_comparisons, a
 from app.services import Crypto, StravaClient, StravaError, StravaTransientError, api_metrics, call_with_token, get_valid_access_token, is_club_member, parse_scopes
 from app.sync import import_history
 from app import webhooks as webhook_registration
-from app.strava_events import event_summary, process_event_in_new_session, record_event
+from app.strava_events import event_summary, process_event_in_new_session, record_event, requeue_unverified_deletes
 from app.i18n import DEFAULT_LOCALE, SUPPORTED_LOCALES, preferred_locale, translate
 from app.exports import athlete_data_export
 from app.webhooks import register_strava_webhook_after_startup, retry_webhook_events_periodically
@@ -164,6 +164,10 @@ def callback(request:Request, code:str|None=None, state:str|None=None, error:str
     except StravaError:
         logger.warning("Initial activity import failed for athlete_id=%s",athlete.id)
         return templates.TemplateResponse(request,"error.html",{"message":"Strava autorizó tu cuenta, pero no permitió descargar las actividades públicas. Vuelve a conectar y acepta el permiso de actividades.","retry_auth":True},status_code=502)
+    if was_disconnected:
+        # Deletions received while the credentials were invalid could not be verified;
+        # the retry worker re-checks them now that Strava can confirm them.
+        requeue_unverified_deletes(db,athlete.strava_athlete_id)
     request.session["athlete_id"] = athlete.id; request.session["sync_count"] = count
     return RedirectResponse("/radar", status_code=303)
 @app.get("/radar",response_class=HTMLResponse)
@@ -234,9 +238,13 @@ def store_webhook_event(payload: dict):
         event,is_new=record_event(db,payload)
         return (event.id if event else None),is_new
     finally: db.close()
+MAX_WEBHOOK_BODY_BYTES=4096
 @app.post("/webhooks/strava",status_code=200)
 async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
-    try: payload=await request.json()
+    body=await request.body()
+    # Strava events are a few hundred bytes; refuse oversized bodies before parsing.
+    if len(body)>MAX_WEBHOOK_BODY_BYTES: raise HTTPException(413)
+    try: payload=json.loads(body)
     except ValueError: raise HTTPException(400)
     if not isinstance(payload,dict): raise HTTPException(400)
     # Validation policy: a known subscription id must match. While it is still

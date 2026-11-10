@@ -1,5 +1,6 @@
 """HTTP layer of POST/GET /webhooks/strava."""
 from datetime import UTC, datetime
+import time
 
 from fastapi.testclient import TestClient
 
@@ -42,7 +43,7 @@ def test_webhook_verification_rejects_wrong_token(monkeypatch):
 def test_event_is_persisted_before_ack_and_duplicates_are_not_reprocessed(db, monkeypatch):
     athlete(db)
     processed = []
-    event = {"object_type": "activity", "aspect_type": "create", "object_id": 123, "owner_id": 9001, "event_time": 1760000000, "subscription_id": 7, "updates": {}}
+    event = {"object_type": "activity", "aspect_type": "create", "object_id": 123, "owner_id": 9001, "event_time": int(time.time()) - 60, "subscription_id": 7, "updates": {}}
     client = client_for(db, monkeypatch, processed)
 
     first = client.post("/webhooks/strava", json=event)
@@ -60,7 +61,7 @@ def test_events_for_another_subscription_are_ignored(db, monkeypatch):
     client = client_for(db, monkeypatch, processed)
     monkeypatch.setattr(webhooks, "active_subscription_id", 7)
 
-    response = client.post("/webhooks/strava", json={"object_type": "activity", "aspect_type": "create", "object_id": 1, "owner_id": 1, "event_time": 1, "subscription_id": 99})
+    response = client.post("/webhooks/strava", json={"object_type": "activity", "aspect_type": "create", "object_id": 1, "owner_id": 1, "event_time": int(time.time()), "subscription_id": 99})
 
     assert response.json() == {"status": "ignored"}
     assert db.query(StravaWebhookEvent).count() == 0 and processed == []

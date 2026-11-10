@@ -33,6 +33,7 @@ from app.services import (
     StravaRateLimitError,
     StravaTransientError,
     call_with_token,
+    mark_reauthorization_required,
     normalize_sport,
     parse_scopes,
 )
@@ -50,7 +51,7 @@ OPEN = ("pending", "retry", "processing")
 LOCAL_UPDATE_FIELDS = {"title", "type"}
 PRIVATE_VISIBILITY = {"only_me", "Only You"}
 # Outcomes after which the local copy reflects Strava's full state at processing time.
-FULL_STATE_OUTCOMES = {"upserted", "not_visible", "removed_private", "deleted", "already_absent"}
+FULL_STATE_OUTCOMES = {"upserted", "not_visible", "not_accessible", "removed_private", "deleted"}
 UNVERIFIED_RETRY_SECONDS = 300
 
 
@@ -63,37 +64,69 @@ def _now() -> datetime:
 
 
 def _as_int(value) -> int | None:
-    if isinstance(value, bool):
+    """Positive integer ids only. Strava sends JSON numbers; bools and floats are rejected."""
+    if isinstance(value, bool) or not isinstance(value, int):
         return None
-    if isinstance(value, int):
-        return value
-    if isinstance(value, str) and value.isdigit():
-        return int(value)
-    return None
+    return value if 0 < value < 2**63 else None
 
 
-def parse_event(payload: dict) -> dict | None:
-    """Validate the fields Strava documents for push events. Returns None when malformed."""
+# What Strava documents for push events. Anything else is rejected before it is
+# stored, so a malformed or crafted payload never reaches the processor.
+ALLOWED_ASPECTS = {"activity": {"create", "update", "delete"}, "athlete": {"update"}}
+ALLOWED_UPDATE_KEYS = {"activity": {"title", "type", "private"}, "athlete": {"authorized"}}
+BOOLEAN_STRINGS = {"true", "false"}
+MAX_UPDATE_VALUE_LENGTH = 255
+# Strava retries a failed delivery a few times shortly after the event; anything
+# much older, or from the future beyond clock skew, is not a genuine delivery.
+MAX_EVENT_AGE = timedelta(days=7)
+MAX_CLOCK_SKEW = timedelta(minutes=10)
+
+
+def _valid_updates(object_type: str, updates) -> bool:
+    if not isinstance(updates, dict) or not set(updates) <= ALLOWED_UPDATE_KEYS[object_type]:
+        return False
+    for key, value in updates.items():
+        if key in {"private", "authorized"}:
+            if str(value).lower() not in BOOLEAN_STRINGS or not isinstance(value, (str, bool)):
+                return False
+        elif not isinstance(value, str) or len(value) > MAX_UPDATE_VALUE_LENGTH:
+            return False
+    return True
+
+
+def parse_event(payload: dict, now: datetime | None = None) -> dict | None:
+    """Validate structure, types and values of a push event. Returns None when invalid."""
     object_type = payload.get("object_type")
     aspect_type = payload.get("aspect_type")
+    if object_type not in ALLOWED_ASPECTS or aspect_type not in ALLOWED_ASPECTS[object_type]:
+        return None
     owner_id = _as_int(payload.get("owner_id"))
     object_id = _as_int(payload.get("object_id"))
     event_time = _as_int(payload.get("event_time"))
-    updates = payload.get("updates") or {}
-    if object_type not in {"activity", "athlete"} or aspect_type not in {"create", "update", "delete"}:
+    subscription_id = _as_int(payload.get("subscription_id"))
+    if None in (owner_id, object_id, event_time, subscription_id):
         return None
-    if owner_id is None or object_id is None or not isinstance(updates, dict):
+    # For athlete events Strava sets object_id to the athlete id itself.
+    if object_type == "athlete" and object_id != owner_id:
         return None
+    updates = payload.get("updates") if payload.get("updates") is not None else {}
+    if not _valid_updates(object_type, updates):
+        return None
+    if object_type == "athlete" and "authorized" not in updates:
+        return None
+    now = now or _now()
+    if not (now - MAX_EVENT_AGE).timestamp() <= event_time <= (now + MAX_CLOCK_SKEW).timestamp():
+        return None
+    canonical = json.dumps(updates, sort_keys=True)
     return {
-        "subscription_id": _as_int(payload.get("subscription_id")),
+        "subscription_id": subscription_id,
         "owner_id": owner_id,
         "object_type": object_type,
         "object_id": object_id,
         "aspect_type": aspect_type,
-        # event_time is part of the idempotency key; fall back to receipt time if absent.
-        "event_time": event_time if event_time is not None else int(_now().timestamp()),
-        "updates": json.dumps(updates, sort_keys=True) if updates else None,
-        "payload_hash": hashlib.sha256(json.dumps(updates, sort_keys=True).encode()).hexdigest(),
+        "event_time": event_time,
+        "updates": canonical if updates else None,
+        "payload_hash": hashlib.sha256(canonical.encode()).hexdigest(),
     }
 
 
@@ -201,6 +234,9 @@ def _deleted_at_or_after(db: Session, event: StravaWebhookEvent) -> bool:
         StravaWebhookEvent.object_id == event.object_id,
         StravaWebhookEvent.aspect_type == "delete",
         StravaWebhookEvent.status == "processed",
+        # Only deletions Strava confirmed; an unverified delete must not be able to
+        # suppress later events for the same activity.
+        StravaWebhookEvent.outcome == "deleted",
         StravaWebhookEvent.event_time >= event.event_time,
     )) > 0
 
@@ -246,11 +282,7 @@ def _apply(db: Session, event: StravaWebhookEvent, client: StravaClient) -> tupl
         return "ignored", "unknown_athlete"
 
     if event.aspect_type == "delete":
-        # Deletions are applied locally regardless of the athlete's state: no API call.
-        removed = _remove_local(db, athlete, event.object_id)
-        athlete.last_sync_at = _now()
-        db.commit()
-        return "processed", "deleted" if removed else "already_absent"
+        return _apply_delete(db, event, athlete, client)
 
     if not athlete.is_club_member or athlete.auth_status != "connected" or not athlete.is_active:
         return "ignored", "athlete_not_syncing"
@@ -270,11 +302,8 @@ def _apply(db: Session, event: StravaWebhookEvent, client: StravaClient) -> tupl
 
     includes_private = "activity:read_all" in parse_scopes(athlete.authorized_scopes)
     if event.aspect_type == "update":
-        if str(updates.get("private", "")).lower() == "true" and not includes_private:
-            _remove_local(db, athlete, event.object_id)
-            athlete.last_sync_at = _now()
-            db.commit()
-            return "processed", "removed_private"
+        # A privacy change ("private" in updates) is never applied from the payload:
+        # it goes through the fetch below, so only Strava's answer can remove data.
         local = db.scalar(select(Activity).where(Activity.strava_activity_id == event.object_id, Activity.athlete_id == athlete.id))
         if local and apply_locally and _is_local_update(event):
             # Title and sport type changes come in the event itself.
@@ -287,20 +316,13 @@ def _apply(db: Session, event: StravaWebhookEvent, client: StravaClient) -> tupl
             db.commit()
             return "processed", "updated_from_event"
 
-    try:
-        item = call_with_token(db, athlete, client, lambda token: client.activity(token, event.object_id))
-    except (StravaNotFoundError, StravaForbiddenError):
-        # Deleted, or no longer visible with the scopes the athlete granted.
-        _remove_local(db, athlete, event.object_id)
-        athlete.last_sync_at = _now()
-        db.commit()
-        return "processed", "not_visible"
-
-    owner = (item.get("athlete") or {}).get("id")
-    if owner is not None and int(owner) != event.owner_id:
+    lookup = _lookup_activity(db, athlete, client, event.object_id)
+    if lookup.status != "found":
+        return _handle_unavailable(db, athlete, event, lookup, removal_outcome="not_visible")
+    item = lookup.item
+    if (item.get("athlete") or {}).get("id") not in (None, event.owner_id):
         return "ignored", "owner_mismatch"
-    is_private = item.get("private") or item.get("visibility") in PRIVATE_VISIBILITY
-    if is_private and not includes_private:
+    if _is_private(item) and not includes_private:
         _remove_local(db, athlete, event.object_id)
         athlete.last_sync_at = _now()
         db.commit()
@@ -309,6 +331,97 @@ def _apply(db: Session, event: StravaWebhookEvent, client: StravaClient) -> tupl
     athlete.last_sync_at = _now()
     db.commit()
     return "processed", "upserted"
+
+
+class _Lookup:
+    """Result of GET /activities/{id}, classified by what it proves about the activity."""
+
+    def __init__(self, status: str, item: dict | None = None):
+        # found | not_found (404: deleted, or hidden from this grant) | forbidden (403
+        # on this activity) | scope_missing (403: the token has no activity scope)
+        self.status = status
+        self.item = item
+
+
+def _lookup_activity(db: Session, athlete: Athlete, client: StravaClient, activity_id: int) -> _Lookup:
+    """One GET /activities/{id}. 401 is refreshed once inside call_with_token; 429,
+    5xx and timeouts propagate so the caller retries instead of deleting anything."""
+    try:
+        return _Lookup("found", call_with_token(db, athlete, client, lambda token: client.activity(token, activity_id)))
+    except StravaNotFoundError:
+        return _Lookup("not_found")
+    except StravaForbiddenError as e:
+        return _Lookup("scope_missing" if e.scope_missing else "forbidden")
+
+
+def _handle_unavailable(db: Session, athlete: Athlete, event: StravaWebhookEvent, lookup: _Lookup, *, removal_outcome: str) -> tuple[str, str]:
+    """Strava did not return the activity. Decide whether that justifies removing it.
+
+    * 404 means it no longer exists or is no longer visible with the athlete's
+      grant (Strava hides activities it will not show). Either way it must not
+      stay in Radar Rudo.
+    * 403 on the activity itself means this grant may not read it (for example
+      it became private): keeping it would exceed what the athlete allows.
+    * 403 for a missing token scope says nothing about this activity: the
+      athlete's grant is broken. Nothing is deleted; the athlete is excluded
+      until they reconnect.
+    """
+    if lookup.status == "scope_missing":
+        mark_reauthorization_required(db, athlete, "activity_scope_missing")
+        return "failed", "permission_denied"
+    _remove_local(db, athlete, event.object_id)
+    athlete.last_sync_at = _now()
+    db.commit()
+    return "processed", removal_outcome if lookup.status == "not_found" else "not_accessible"
+
+
+def _is_private(item: dict) -> bool:
+    return bool(item.get("private")) or item.get("visibility") in PRIVATE_VISIBILITY
+
+
+def _apply_delete(db: Session, event: StravaWebhookEvent, athlete: Athlete, client: StravaClient) -> tuple[str, str]:
+    """Delete events are unsigned, so Strava confirms the deletion before we delete.
+
+    Cost: one GET /activities/{id}, and only when the activity is stored locally.
+    """
+    local = db.scalar(select(Activity).where(Activity.strava_activity_id == event.object_id, Activity.athlete_id == athlete.id))
+    if not local:
+        return "processed", "already_absent"  # nothing to delete: no API call
+    if athlete.auth_status != "connected":
+        # No usable credentials to verify with. Keep the activity (the athlete is
+        # already hidden) and re-check when they reconnect.
+        return "failed", "delete_unverified_disconnected"
+    lookup = _lookup_activity(db, athlete, client, event.object_id)
+    if lookup.status != "found":
+        return _handle_unavailable(db, athlete, event, lookup, removal_outcome="deleted")
+    item = lookup.item
+    if (item.get("athlete") or {}).get("id") not in (None, event.owner_id):
+        return "ignored", "owner_mismatch"
+    includes_private = "activity:read_all" in parse_scopes(athlete.authorized_scopes)
+    if _is_private(item) and not includes_private:
+        _remove_local(db, athlete, event.object_id)
+        athlete.last_sync_at = _now()
+        db.commit()
+        return "processed", "removed_private"
+    # Strava still serves the activity: the delete did not come from Strava, or
+    # was not real. Keep it and refresh it with the authoritative copy.
+    upsert_activity(db, athlete, item)
+    athlete.last_sync_at = _now()
+    db.commit()
+    logger.warning("Delete event not confirmed by Strava for athlete_id=%s; activity kept", athlete.id)
+    return "ignored", "delete_not_confirmed"
+
+
+def requeue_unverified_deletes(db: Session, owner_id: int) -> int:
+    """After a reconnection, re-check deletions that arrived while credentials were invalid."""
+    result = db.execute(
+        update(StravaWebhookEvent)
+        .where(StravaWebhookEvent.owner_id == owner_id, StravaWebhookEvent.status == "failed", StravaWebhookEvent.outcome == "delete_unverified_disconnected")
+        .values(status="retry", attempts=0, next_attempt_at=_now(), outcome=None)
+        .execution_options(synchronize_session=False)
+    )
+    db.commit()
+    return result.rowcount or 0
 
 
 def _deauthorization_confirmed(db: Session, athlete: Athlete, client: StravaClient) -> bool:

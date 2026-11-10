@@ -1,5 +1,6 @@
 """Event processing: idempotency, ordering, retries, tokens and deauthorization."""
 from datetime import UTC, datetime, timedelta
+import time
 
 import httpx
 import pytest
@@ -53,9 +54,14 @@ class FakeClient:
         return result
 
 
+# Event times in tests are offsets (seconds) from a base one hour ago, so they
+# fall inside the window parse_event accepts.
+BASE_TIME = int(time.time()) - 3600
+
+
 def event(db, aspect="create", object_id=123, owner=9001, event_time=1000, object_type="activity", updates=None):
     payload = {"object_type": object_type, "aspect_type": aspect, "object_id": object_id, "owner_id": owner,
-               "event_time": event_time, "subscription_id": 7, "updates": updates or {}}
+               "event_time": BASE_TIME + event_time, "subscription_id": 7, "updates": updates or {}}
     stored, is_new = record_event(db, payload)
     assert is_new
     return stored.id
@@ -113,24 +119,24 @@ def test_update_for_unknown_activity_falls_back_to_a_fetch(db, fake_token):
     assert len(client.calls) == 1
 
 
-def test_delete_removes_the_activity_without_calling_strava(db, fake_token):
+def test_delete_confirmed_by_strava_404_removes_the_activity(db, fake_token):
     owner = make_athlete(db)
     db.add(Activity(athlete=owner, strava_activity_id=321, name="Gone", sport_type="Run", start_date=datetime.now(UTC)))
     db.commit()
-    client = FakeClient()
+    client = FakeClient(StravaNotFoundError("Record Not Found"))
 
     assert process_event(db, event(db, "delete", object_id=321), client) == "deleted"
-    assert db.query(Activity).count() == 0 and client.calls == []
+    assert db.query(Activity).count() == 0 and client.calls == [("activity", 321, "access")]
 
 
-def test_activity_made_private_is_removed_when_private_scope_was_not_granted(db, fake_token):
+def test_activity_made_private_is_removed_once_strava_confirms_it(db, fake_token):
     owner = make_athlete(db)
     db.add(Activity(athlete=owner, strava_activity_id=123, name="Now private", sport_type="Run", start_date=datetime.now(UTC)))
     db.commit()
-    client = FakeClient()
+    client = FakeClient(summary(private=True, visibility="only_me"))
 
     assert process_event(db, event(db, "update", updates={"private": "true"}), client) == "removed_private"
-    assert db.query(Activity).count() == 0 and client.calls == []
+    assert db.query(Activity).count() == 0 and len(client.calls) == 1
 
 
 def test_private_activity_returned_by_strava_is_not_stored_without_read_all(db, fake_token):
@@ -162,7 +168,7 @@ def test_activity_not_found_on_strava_is_removed_locally(db, fake_token):
 
 def test_duplicate_delivery_is_recorded_once_and_processed_once(db, fake_token):
     make_athlete(db)
-    payload = {"object_type": "activity", "aspect_type": "create", "object_id": 123, "owner_id": 9001, "event_time": 1000, "subscription_id": 7}
+    payload = {"object_type": "activity", "aspect_type": "create", "object_id": 123, "owner_id": 9001, "event_time": BASE_TIME, "subscription_id": 7}
     first, new_first = record_event(db, payload)
     second, new_second = record_event(db, payload)
     client = FakeClient(summary())
@@ -195,15 +201,27 @@ def test_event_superseded_by_a_queued_newer_event_does_not_call_strava(db, fake_
     assert client.calls == []
 
 
-def test_late_create_after_delete_does_not_resurrect_the_activity(db, fake_token):
-    make_athlete(db)
-    client = FakeClient(summary())
-    delete = event(db, "delete", event_time=2000)
-    assert process_event(db, delete, client) == "already_absent"
+def test_late_create_after_a_confirmed_delete_does_not_resurrect_the_activity(db, fake_token):
+    owner = make_athlete(db)
+    db.add(Activity(athlete=owner, strava_activity_id=123, name="A", sport_type="Run", start_date=datetime.now(UTC)))
+    db.commit()
+    client = FakeClient(StravaNotFoundError("gone"))
+    assert process_event(db, event(db, "delete", event_time=2000), client) == "deleted"
 
     late_create = event(db, "create", event_time=1000)
-    assert process_event(db, late_create, client) in {"already_deleted", "stale"}
-    assert db.query(Activity).count() == 0 and client.calls == []
+    assert process_event(db, late_create, client) == "already_deleted"
+    assert db.query(Activity).count() == 0 and len(client.calls) == 1
+
+
+def test_late_create_after_an_unverified_delete_asks_strava(db, fake_token):
+    make_athlete(db)
+    delete = event(db, "delete", event_time=2000)
+    assert process_event(db, delete, FakeClient()) == "already_absent"  # nothing stored, no call
+
+    # The delete was not verified, so it cannot suppress the create: Strava decides.
+    client = FakeClient(StravaNotFoundError("gone"))
+    assert process_event(db, event(db, "create", event_time=1000), client) == "not_visible"
+    assert db.query(Activity).count() == 0 and len(client.calls) == 1
 
 
 # --- athletes, tokens and deauthorization ----------------------------------
@@ -297,7 +315,7 @@ def test_revoked_refresh_token_flags_athlete_and_stops_retries(db, encryption):
     assert (owner.auth_status, owner.is_active) == ("reauth_required", False)
     assert status(db, event_id) == ("failed", "athlete_auth_invalid")
     # Later events for this athlete are ignored without touching Strava again.
-    assert process_event(db, event(db, object_id=999, event_time=5000), client) == "athlete_not_syncing"
+    assert process_event(db, event(db, object_id=999, event_time=3000), client) == "athlete_not_syncing"
     assert client.refreshed == 1
     assert process_due_events(db, client)["attempted"] == 0
 

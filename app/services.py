@@ -70,13 +70,32 @@ class StravaAuthError(StravaError):
 
 
 class StravaForbiddenError(StravaError):
-    """HTTP 403: the token lacks the scope for this resource."""
+    """HTTP 403. ``scope_missing`` is True when Strava says the token lacks a
+    required scope (an athlete-level grant problem), False when access to this
+    particular resource is refused."""
     status_code = 403
+
+    def __init__(self, message: str, scope_missing: bool = False):
+        super().__init__(message)
+        self.scope_missing = scope_missing
+
+
+def _forbidden_for_missing_scope(body) -> bool:
+    # Strava reports e.g. {"message": "Authorization Error", "errors": [{"resource":
+    # "AccessToken", "field": "activity:read_permission", "code": "missing"}]}.
+    errors = body.get("errors") if isinstance(body, dict) else None
+    return any(
+        isinstance(e, dict) and (e.get("resource") == "AccessToken" or str(e.get("field", "")).endswith("_permission"))
+        for e in errors or []
+    )
 
 
 class StravaNotFoundError(StravaError):
     """HTTP 404: the resource is gone or not visible with the granted scopes."""
     status_code = 404
+
+
+SOFT_LIMIT_RATIO = 0.9
 
 
 class StravaApiMetrics:
@@ -92,6 +111,7 @@ class StravaApiMetrics:
             self.statuses: Counter[str] = Counter()
             self.last_usage: dict[str, str] = {}
             self.rate_limited_until: datetime | None = None
+            self.last_usage_at: datetime | None = None
             self.started_at = datetime.now(UTC)
 
     def record(self, endpoint: str, status: int | str, headers: httpx.Headers | None = None):
@@ -102,6 +122,7 @@ class StravaApiMetrics:
                 for name in ("X-RateLimit-Limit", "X-RateLimit-Usage", "X-ReadRateLimit-Limit", "X-ReadRateLimit-Usage"):
                     if name in headers:
                         self.last_usage[name] = headers[name]
+                        self.last_usage_at = datetime.now(UTC)
 
     def block_until(self, until: datetime):
         with self._lock:
@@ -115,6 +136,35 @@ class StravaApiMetrics:
                 return 0
             remaining = (self.rate_limited_until - datetime.now(UTC)).total_seconds()
             return max(0, int(remaining) + 1)
+
+    def near_limit_for(self, threshold: float = SOFT_LIMIT_RATIO, now: datetime | None = None) -> int:
+        """Seconds to wait when the last observed usage is at ``threshold`` of a limit.
+
+        Keeps headroom below Strava's limits (for OAuth imports and genuine events)
+        if a burst of events, genuine or forged, would otherwise exhaust the quota.
+        Usage is only trusted inside the window it was observed in.
+        """
+        now = now or datetime.now(UTC)
+        with self._lock:
+            observed, usage = self.last_usage_at, dict(self.last_usage)
+        if not observed:
+            return 0
+        window_start = now.replace(minute=(now.minute // 15) * 15, second=0, microsecond=0)
+        wait = 0
+        for prefix in ("X-RateLimit", "X-ReadRateLimit"):
+            try:
+                limits = [int(v) for v in usage.get(f"{prefix}-Limit", "").split(",")]
+                used = [int(v) for v in usage.get(f"{prefix}-Usage", "").split(",")]
+            except ValueError:
+                continue
+            if len(limits) != 2 or len(used) != 2:
+                continue
+            if observed >= window_start and limits[0] and used[0] >= threshold * limits[0]:
+                wait = max(wait, int((window_start + timedelta(minutes=15) - now).total_seconds()) + 1)
+            if observed.date() == now.date() and limits[1] and used[1] >= threshold * limits[1]:
+                tomorrow = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+                wait = max(wait, int((tomorrow - now).total_seconds()) + 1)
+        return wait
 
     def snapshot(self) -> dict:
         with self._lock:
@@ -172,6 +222,10 @@ class StravaClient:
         if blocked:
             # Do not hit Strava again while a 429 window is still open.
             raise StravaRateLimitError("Strava rate limit reached; try again later", blocked)
+        near = api_metrics.near_limit_for()
+        if near:
+            logger.warning("Strava usage above %.0f%% of a limit; deferring endpoint=%s for %ss", SOFT_LIMIT_RATIO * 100, endpoint, near)
+            raise StravaRateLimitError("Strava usage is close to the limit; try again later", near)
         try:
             r = self.client.request(method, url or f"{self.base_url}{path}", **kwargs)
         except httpx.TimeoutException as e:
@@ -189,6 +243,7 @@ class StravaClient:
             logger.warning("Strava rate limit reached endpoint=%s usage=%s retry_after_s=%s", endpoint, usage or "-", retry_after)
             raise StravaRateLimitError("Strava rate limit reached; try again later", retry_after)
         if r.status_code >= 400:
+            body = None
             try:
                 body = r.json()
                 reason = body.get("message") if isinstance(body, dict) else None
@@ -198,7 +253,7 @@ class StravaClient:
             if r.status_code == 401:
                 raise StravaAuthError("Strava rejected the access token")
             if r.status_code == 403:
-                raise StravaForbiddenError("Strava rechazó el acceso al recurso. Revisa el acceso de la aplicación en Strava.")
+                raise StravaForbiddenError("Strava rechazó el acceso al recurso. Revisa el acceso de la aplicación en Strava.", scope_missing=_forbidden_for_missing_scope(body))
             if r.status_code == 404:
                 raise StravaNotFoundError("Strava resource not found")
             if r.status_code >= 500:
