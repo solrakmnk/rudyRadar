@@ -7,7 +7,8 @@ every athlete every two hours; it now only does maintenance:
 * retries webhook events whose backoff has elapsed (Strava is called only for
   those events);
 * revalidates club membership for athletes not checked in
-  MEMBERSHIP_REVALIDATION_DAYS (one /athlete/clubs call per athlete per week);
+  MEMBERSHIP_REVALIDATION_DAYS and refreshes their photo URL (one
+  /athlete/clubs and one /athlete call per athlete per week);
 * purges old webhook event records.
 
 Manual commands:
@@ -27,7 +28,7 @@ from sqlalchemy import or_, select
 from app.config import get_settings
 from app.database import SessionLocal
 from app.models import Athlete
-from app.services import StravaAuthError, StravaClient, StravaError, api_metrics, call_with_token, is_club_member
+from app.services import StravaAuthError, StravaClient, StravaError, api_metrics, call_with_token, is_club_member, profile_photo_url
 from app.strava_events import event_summary, process_due_events, purge_old_events, requeue_failed
 from app.sync import recover_activities
 
@@ -74,7 +75,25 @@ def revalidate_memberships(db, client: StravaClient) -> dict[str, int]:
         else:
             athlete.membership_check_status = "verified"
         db.commit()
+        if athlete.is_club_member and _refresh_photo(db, athlete, client):
+            result["photos_updated"] = result.get("photos_updated", 0) + 1
     return result
+
+
+def _refresh_photo(db, athlete: Athlete, client: StravaClient) -> bool:
+    """Keep the stored photo URL current: Strava's old photo URLs stop working when an
+    athlete changes their picture, and no webhook announces profile changes. One
+    GET /athlete per athlete, at most once per revalidation period."""
+    try:
+        photo = profile_photo_url(call_with_token(db, athlete, client, client.athlete))
+    except StravaError:
+        db.rollback()
+        return False
+    if photo == athlete.profile_url:
+        return False
+    athlete.profile_url = photo
+    db.commit()
+    return True
 
 
 def _safe(db, name: str, fn):
