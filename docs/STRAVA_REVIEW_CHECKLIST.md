@@ -9,7 +9,7 @@ Actualizado: 4 de octubre de 2026.
 - **Audiencia actual:** integrantes verificados del club RUD@S.
 - **Objetivo:** ayudar a cada atleta a entender su constancia y rendimiento por disciplina a partir de sus actividades autorizadas.
 - **OAuth:** el registro solicita `read`, `profile:read_all` y `activity:read`; `activity:read_all` es opcional y se habilita después desde Configuración.
-- **Webhook:** activo en `https://rudo-radar.up.railway.app/webhooks/strava`; procesa altas, cambios, eliminaciones y revocaciones. No hay polling ni cron de reconciliación.
+- **Webhook:** activo en `https://rudo-radar.up.railway.app/webhooks/strava`; procesa altas, cambios, eliminaciones y revocaciones con una cola persistente, idempotente y con reintentos. No hay polling de actividades; ver `docs/STRAVA_SYNC_AUDIT.md`.
 - **Retención actual:** hasta un año de resúmenes; no se almacenan rutas, GPS, polylines ni streams biométricos. La retención supera el máximo de siete días descrito en la política vigente y debe corregirse o autorizarse expresamente antes de solicitar revisión.
 - **Eliminación:** el usuario puede eliminar su cuenta desde Configuración; se revoca el acceso y se borran atleta, tokens y actividades locales. La revocación recibida por webhook también elimina los datos.
 - **Contacto:** solrak.m@gmail.com
@@ -37,8 +37,9 @@ Estas funciones y la retención anual son el principal riesgo de rechazo. Antes 
 | Requisito | Estado | Evidencia o acción |
 |---|---|---|
 | Capacidad actual de 10 atletas | Listo para solicitar ampliación | La documentación indica que la revisión corresponde al alcanzar 10 conexiones. |
-| Webhooks y revocación | Cumple | Suscripción activa; procesamiento asíncrono e idempotente. |
-| Evitar polling excesivo | Cumple | Solo webhook; sin polling periódico. |
+| Webhooks y revocación | Cumple | Suscripción activa; eventos persistidos antes del 200, deduplicados, ordenados y reintentados con backoff. |
+| Evitar polling excesivo | Cumple (tras desplegar) | La importación REST ocurre una vez por atleta; el cron solo hace mantenimiento. Manejo de 429 con pausa hasta el reinicio de la ventana. |
+| Tokens inválidos y desconexiones | Cumple (tras desplegar) | Un 401 provoca un refresh y un reintento; un refresh rechazado marca `reauth_required` y excluye al atleta sin reintentos infinitos. |
 | Permisos mínimos | Cumple | `activity:read` por defecto; privadas optativas mediante `activity:read_all`. |
 | Política de privacidad pública | Implementado | `/privacy`, disponible en español e inglés. |
 | Eliminación por solicitud o revocación | Implementado | Configuración de cuenta y webhook de desautorización. |

@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+import logging
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.models import Activity, Athlete
-from app.services import StravaClient, get_valid_access_token, normalize_sport
+from app.services import StravaClient, StravaError, StravaRateLimitError, StravaTransientError, call_with_token, normalize_sport
+
+logger = logging.getLogger(__name__)
+MAX_RECOVERY_DAYS = 30
 
 
 def upsert_activity(db: Session, athlete: Athlete, item: dict) -> Activity:
@@ -38,13 +42,18 @@ def upsert_activity(db: Session, athlete: Athlete, item: dict) -> Activity:
 
 
 def sync_activities(db: Session, athlete: Athlete, client: StravaClient, *, lookback_days: int | None = None, reconcile: bool = False) -> int:
-    """Backfill a bounded history once, then only refresh recent summaries."""
-    token = get_valid_access_token(db, athlete, client)
+    """Download summary activities once for a bounded window and upsert them.
+
+    This is the one-time historical import (first connection, or a change in
+    the privacy scopes the athlete granted). It is never scheduled: webhooks
+    keep the data current afterwards. Activities are upserted by their Strava
+    id, so running it twice never creates duplicates.
+    """
     settings = get_settings()
     initial_history = athlete.history_synced_at is None
     days = lookback_days or (settings.strava_initial_history_days if initial_history else settings.strava_rolling_sync_days)
     cutoff = datetime.now(UTC) - timedelta(days=days)
-    activities = client.activities(token, cutoff)
+    activities = call_with_token(db, athlete, client, lambda token: client.activities(token, cutoff))
     for item in activities:
         upsert_activity(db, athlete, item)
     if reconcile:
@@ -58,3 +67,36 @@ def sync_activities(db: Session, athlete: Athlete, client: StravaClient, *, look
     db.commit()
     return len(activities)
 
+
+def import_history(db: Session, athlete: Athlete, client: StravaClient, *, lookback_days: int, reconcile: bool = False) -> int:
+    """Run ``sync_activities`` and record its status and result on the athlete."""
+    athlete.initial_import_status = "running"
+    athlete.initial_import_error = None
+    db.commit()
+    try:
+        count = sync_activities(db, athlete, client, lookback_days=lookback_days, reconcile=reconcile)
+    except StravaError as e:
+        db.rollback()
+        athlete.initial_import_status = "failed"
+        athlete.initial_import_error = "rate_limited" if isinstance(e, StravaRateLimitError) else "strava_unavailable" if isinstance(e, StravaTransientError) else type(e).__name__
+        db.commit()
+        logger.warning("Activity import failed athlete_id=%s error=%s", athlete.id, athlete.initial_import_error)
+        raise
+    athlete.initial_import_status = "completed"
+    athlete.initial_import_count = count
+    db.commit()
+    logger.info("Activity import completed athlete_id=%s days=%s activities=%s reconcile=%s", athlete.id, lookback_days, count, reconcile)
+    return count
+
+
+def recover_activities(db: Session, athlete: Athlete, client: StravaClient, *, days: int) -> int:
+    """Manual, bounded catch-up for one athlete (e.g. after a webhook outage).
+
+    Capped at MAX_RECOVERY_DAYS so it can never become a disguised full poll.
+    """
+    if athlete.auth_status != "connected" or not athlete.is_active or not athlete.is_club_member:
+        raise ValueError("athlete is not connected")
+    days = max(1, min(days, MAX_RECOVERY_DAYS))
+    count = sync_activities(db, athlete, client, lookback_days=days)
+    logger.warning("Manual activity recovery athlete_id=%s days=%s activities=%s", athlete.id, days, count)
+    return count

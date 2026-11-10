@@ -8,6 +8,8 @@ import httpx
 from app.config import get_settings
 
 logger = logging.getLogger(__name__)
+# Set once the subscription is confirmed; incoming events from other ids are ignored.
+active_subscription_id: int | None = None
 SUBSCRIPTIONS_URL = "https://www.strava.com/api/v3/push_subscriptions"
 
 
@@ -58,7 +60,37 @@ async def ensure_strava_webhook(client: httpx.AsyncClient | None = None) -> int 
 
 
 async def register_strava_webhook_after_startup() -> None:
+    global active_subscription_id
     # Give Railway time to put the healthy deployment behind the public domain
     # before Strava performs its synchronous callback verification.
     await asyncio.sleep(10)
-    await ensure_strava_webhook()
+    subscription_id = await ensure_strava_webhook()
+    if isinstance(subscription_id, int):
+        active_subscription_id = subscription_id
+
+
+async def retry_webhook_events_periodically() -> None:
+    """Retry due webhook events from the queue. Reads the database only; Strava is
+    called solely for events that previously failed with a transient error."""
+    interval = get_settings().webhook_retry_interval_seconds
+    if interval <= 0:
+        return
+    from app.database import SessionLocal
+    from app.strava_events import process_due_events
+
+    def run_once():
+        db = SessionLocal()
+        try:
+            return process_due_events(db)
+        finally:
+            db.close()
+
+    await asyncio.sleep(30)
+    while True:
+        try:
+            result = await asyncio.to_thread(run_once)
+            if result.get("attempted") or result.get("released"):
+                logger.info("Webhook retry pass: %s", result)
+        except Exception:
+            logger.exception("Webhook retry pass failed")
+        await asyncio.sleep(interval)

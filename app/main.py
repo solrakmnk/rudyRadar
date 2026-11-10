@@ -1,5 +1,5 @@
 from __future__ import annotations
-import asyncio, hashlib, hmac, secrets
+import asyncio, hashlib, hmac, os, secrets
 import logging
 from contextlib import asynccontextmanager, suppress
 from datetime import UTC, datetime
@@ -8,6 +8,7 @@ from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Req
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.concurrency import run_in_threadpool
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
@@ -15,18 +16,24 @@ from app.config import get_settings
 from app.database import get_db
 from app.models import Activity, Athlete
 from app.analytics import activity_highlights, athlete_discipline_comparisons, athlete_discipline_stats, athlete_period_stats, discipline_leaderboards, discipline_type_breakdown, period_comparison, rankings, team_active_members, team_discipline_comparisons, team_discipline_members, team_group_stats, team_highlights, team_leaderboard, team_overview, team_sport_highlights
-from app.services import Crypto, StravaClient, StravaError, get_valid_access_token, is_club_member, parse_scopes
-from app.sync import sync_activities, upsert_activity
+from app.services import Crypto, StravaClient, StravaError, StravaTransientError, api_metrics, call_with_token, get_valid_access_token, is_club_member, parse_scopes
+from app.sync import import_history
+from app import webhooks as webhook_registration
+from app.strava_events import event_summary, process_event_in_new_session, record_event
 from app.i18n import DEFAULT_LOCALE, SUPPORTED_LOCALES, preferred_locale, translate
 from app.exports import athlete_data_export
-from app.webhooks import register_strava_webhook_after_startup
+from app.webhooks import register_strava_webhook_after_startup, retry_webhook_events_periodically
+
+logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO").upper())
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    task=asyncio.create_task(register_strava_webhook_after_startup())
+    tasks=[asyncio.create_task(register_strava_webhook_after_startup()), asyncio.create_task(retry_webhook_events_periodically())]
     yield
-    task.cancel()
-    with suppress(asyncio.CancelledError): await task
+    for task in tasks:
+        task.cancel()
+        with suppress(asyncio.CancelledError): await task
 
 settings=get_settings(); app=FastAPI(title="Radar Rudo",lifespan=lifespan); app.add_middleware(SessionMiddleware, secret_key=settings.session_secret, https_only=settings.app_base_url.startswith("https://"), same_site="lax"); app.mount("/static",StaticFiles(directory="app/static"),name="static")
 def template_context(request: Request):
@@ -86,7 +93,7 @@ def delete_my_data(request: Request, db: Session = Depends(get_db)):
     athlete = db.get(Athlete, athlete_id) if athlete_id else None
     if athlete:
         try:
-            StravaClient().deauthorize(Crypto().decrypt(athlete.access_token_encrypted))
+            client=StravaClient(); client.deauthorize(get_valid_access_token(db,athlete,client))
         except Exception:
             logger.warning("Could not revoke Strava authorization for athlete_id=%s", athlete.id)
         db.delete(athlete); db.commit()
@@ -113,6 +120,8 @@ def callback(request:Request, code:str|None=None, state:str|None=None, error:str
     except StravaError as e: return templates.TemplateResponse(request,"error.html",{"message":str(e)},status_code=502)
     source=payload["athlete"]; athlete=db.scalar(select(Athlete).where(Athlete.strava_athlete_id==source["id"]))
     if not athlete: athlete=Athlete(strava_athlete_id=source["id"],firstname=source.get("firstname","Rudy"),lastname=source.get("lastname","")); db.add(athlete)
+    had_private=athlete.id is not None and "activity:read_all" in parse_scopes(athlete.authorized_scopes); was_disconnected=athlete.auth_status=="reauth_required"
+    athlete.auth_status="connected"; athlete.auth_error=None; athlete.auth_error_at=None
     crypto=Crypto(); athlete.firstname=source.get("firstname","Rudy"); athlete.lastname=source.get("lastname",""); athlete.profile_url=source.get("profile"); athlete.access_token_encrypted=crypto.encrypt(token); athlete.refresh_token_encrypted=crypto.encrypt(payload["refresh_token"]); athlete.token_expires_at=datetime.fromtimestamp(payload["expires_at"],UTC); athlete.authorized_scopes=",".join(sorted(granted_scopes)); athlete.membership_checked_at=datetime.now(UTC); athlete.membership_check_error=None
     try:
         clubs=client.clubs(token)
@@ -124,12 +133,27 @@ def callback(request:Request, code:str|None=None, state:str|None=None, error:str
         athlete.membership_check_status="not_member"; athlete.is_active=False; athlete.is_club_member=False; db.commit()
         return templates.TemplateResponse(request,"not_member.html",{"verification_issue":False})
     athlete.membership_check_status="verified"; athlete.is_active=True; athlete.is_club_member=True; db.commit()
+    # Strava REST is used only when the local copy cannot be kept current by webhooks:
+    # the first connection, a change in the privacy scope, or a reconnection after the
+    # credentials stopped working. A normal login makes no activity request.
+    has_private="activity:read_all" in granted_scopes
     stored_activities=db.scalar(select(func.count(Activity.id)).where(Activity.athlete_id==athlete.id)) or 0
-    lookback_days=settings.strava_initial_history_days if stored_activities == 0 or requested_private or remove_private else None
+    history_done=athlete.history_synced_at is not None and athlete.initial_import_status=="completed" and stored_activities>0
+    lost_private=(had_private and not has_private) or remove_private
+    if not history_done or has_private!=had_private or remove_private:
+        lookback_days=settings.strava_initial_history_days; reconcile=lost_private
+    elif was_disconnected and athlete.last_sync_at:
+        missed=(datetime.now(UTC)-(athlete.last_sync_at if athlete.last_sync_at.tzinfo else athlete.last_sync_at.replace(tzinfo=UTC))).days+1
+        lookback_days=min(max(missed,1),settings.strava_initial_history_days); reconcile=False
+    else:
+        lookback_days=None; reconcile=False
     try:
-        count=sync_activities(db,athlete,StravaClient(),lookback_days=lookback_days,reconcile=remove_private) if settings.strava_sync_enabled else 0
+        count=import_history(db,athlete,client,lookback_days=lookback_days,reconcile=reconcile) if settings.strava_sync_enabled and lookback_days else 0
+    except StravaTransientError:
+        logger.warning("Activity import deferred for athlete_id=%s: Strava temporarily unavailable",athlete.id)
+        return templates.TemplateResponse(request,"error.html",{"message":"Tu cuenta quedó conectada, pero Strava está limitando las solicitudes en este momento. Vuelve a entrar en unos minutos para completar la importación.","retry_auth":True},status_code=503)
     except StravaError:
-        db.rollback(); logger.exception("Initial activity sync failed for athlete_id=%s",athlete.id)
+        logger.warning("Initial activity import failed for athlete_id=%s",athlete.id)
         return templates.TemplateResponse(request,"error.html",{"message":"Strava autorizó tu cuenta, pero no permitió descargar las actividades públicas. Vuelve a conectar y acepta el permiso de actividades.","retry_auth":True},status_code=502)
     request.session["athlete_id"] = athlete.id; request.session["sync_count"] = count
     return RedirectResponse("/radar", status_code=303)
@@ -164,7 +188,7 @@ def revalidate_athlete(athlete_id:int, db:Session=Depends(get_db)):
     if not athlete: raise HTTPException(404)
     athlete.membership_checked_at=datetime.now(UTC); athlete.membership_check_error=None
     try:
-        clubs=StravaClient().clubs(get_valid_access_token(db,athlete,StravaClient()))
+        client=StravaClient(); clubs=call_with_token(db,athlete,client,client.clubs)
         verified=is_club_member(clubs); athlete.membership_check_status="verified" if verified else "not_member"; athlete.is_club_member=verified; athlete.is_active=verified
     except StravaError:
         athlete.membership_check_status="unavailable"; athlete.membership_check_error="club_lookup_failed"; athlete.is_club_member=False; athlete.is_active=False
@@ -182,29 +206,37 @@ def report(period:str="week",db:Session=Depends(get_db)):
 def verify_webhook(hub_mode:str|None=Query(None,alias="hub.mode"),hub_verify_token:str|None=Query(None,alias="hub.verify_token"),hub_challenge:str|None=Query(None,alias="hub.challenge")):
     if hub_mode=="subscribe" and settings.webhook_verify_token and hmac.compare_digest(hub_verify_token or "",settings.webhook_verify_token): return {"hub.challenge":hub_challenge}
     raise HTTPException(403)
-def process_webhook(payload: dict):
+@app.get("/admin/strava",dependencies=[Depends(admin_ok)])
+def strava_diagnostics(db:Session=Depends(get_db)):
+    """Webhook queue state, API consumption and athletes needing attention."""
+    athletes=db.scalars(select(Athlete)).all()
+    return {
+        "subscription_id": webhook_registration.active_subscription_id,
+        "activity_polling": False,
+        "webhook_events": event_summary(db),
+        "strava_api": api_metrics.snapshot(),
+        "athletes": [{"id":a.id,"active":a.is_active,"club_member":a.is_club_member,"auth_status":a.auth_status,"auth_error":a.auth_error,"initial_import_status":a.initial_import_status,"initial_import_count":a.initial_import_count,"last_sync_at":a.last_sync_at.isoformat() if a.last_sync_at else None} for a in athletes],
+    }
+def store_webhook_event(payload: dict):
     db=next(get_db())
     try:
-        athlete=db.scalar(select(Athlete).where(Athlete.strava_athlete_id==payload.get("owner_id"),Athlete.is_active.is_(True)))
-        if not athlete: return
-        authorized=payload.get("updates", {}).get("authorized")
-        if payload.get("object_type") == "athlete" and authorized in (False,"false"):
-            db.delete(athlete); db.commit(); return
-        if payload.get("object_type") != "activity": return
-        activity_id=payload.get("object_id")
-        if not isinstance(activity_id,int): return
-        if payload.get("aspect_type")=="delete":
-            activity=db.scalar(select(Activity).where(Activity.strava_activity_id==activity_id))
-            if activity: db.delete(activity)
-            athlete.last_sync_at=datetime.now(UTC); db.commit()
-            return
-        token=get_valid_access_token(db,athlete,StravaClient()); upsert_activity(db,athlete,StravaClient().activity(token,activity_id)); athlete.last_sync_at=datetime.now(UTC); db.commit()
-        logger.info("Processed Strava webhook aspect=%s athlete_id=%s activity_id=%s",payload.get("aspect_type"),athlete.id,activity_id)
-    except Exception:
-        db.rollback(); logger.exception("Strava webhook processing failed")
+        event,is_new=record_event(db,payload)
+        return (event.id if event else None),is_new
     finally: db.close()
 @app.post("/webhooks/strava",status_code=200)
 async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
-    payload=await request.json()
+    try: payload=await request.json()
+    except ValueError: raise HTTPException(400)
     if not isinstance(payload,dict): raise HTTPException(400)
-    background_tasks.add_task(process_webhook,payload); return {"status":"accepted"}
+    expected=webhook_registration.active_subscription_id
+    if expected is not None and payload.get("subscription_id")!=expected:
+        logger.warning("Ignoring Strava webhook for an unknown subscription")
+        return {"status":"ignored"}
+    # Persist before acknowledging so a crash or redeploy never loses the event,
+    # then process outside the request so Strava gets its 200 well within 2 seconds.
+    event_id,is_new=await run_in_threadpool(store_webhook_event,payload)
+    if event_id is None:
+        logger.warning("Ignoring malformed Strava webhook payload")
+        return {"status":"ignored"}
+    if is_new: background_tasks.add_task(process_event_in_new_session,event_id)
+    return {"status":"accepted" if is_new else "duplicate"}

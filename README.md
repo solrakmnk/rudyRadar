@@ -29,7 +29,19 @@ Por defecto `STRAVA_SYNC_ENABLED=false`: OAuth y validación de club están impl
 
 Crea un servicio PostgreSQL y un servicio desde este repositorio usando el Dockerfile. Copia las variables de `.env.example`, reemplaza `DATABASE_URL` por la que entrega Railway y ajusta `APP_BASE_URL` y `STRAVA_REDIRECT_URI` a HTTPS. Ejecuta `alembic upgrade head` una vez desde el shell de Railway antes de habilitar tráfico.
 
-El contenedor ejecuta `alembic upgrade head` antes de iniciar la aplicación, por lo que cada despliegue aplica las migraciones pendientes. Los webhooks de Strava son la única fuente de actualizaciones (no hay polling periódico); `https://<dominio>/webhooks/strava` debe estar registrado como callback y `WEBHOOK_VERIFY_TOKEN` debe estar definido. Los eventos `create`, `update` y `delete` son idempotentes y la app consulta Strava para obtener la actividad completa antes de persistirla. La única descarga por lista ocurre al conectar o reconectar la cuenta con OAuth.
+El contenedor ejecuta `alembic upgrade head` antes de iniciar la aplicación, por lo que cada despliegue aplica las migraciones pendientes.
+
+### Sincronización con Strava (basada en eventos)
+
+Ver [`docs/STRAVA_SYNC_AUDIT.md`](docs/STRAVA_SYNC_AUDIT.md) para el diseño completo.
+
+- **Importación inicial (REST, una sola vez):** al conectar por primera vez se descargan `STRAVA_INITIAL_HISTORY_DAYS` días de resúmenes con paginación de 200. El estado queda en `athletes.initial_import_status`. Un inicio de sesión normal no descarga actividades; solo se vuelve a consultar la lista si cambia el permiso de actividades privadas o si el atleta se reconecta después de que sus credenciales dejaran de funcionar (en ese caso, solo los días faltantes).
+- **Webhooks (todas las actualizaciones):** `POST /webhooks/strava` guarda cada evento en `strava_webhook_events` antes de responder 200 y lo procesa en segundo plano. Las entregas duplicadas se descartan, los eventos fuera de orden se omiten, los cambios de título o tipo se aplican sin llamar a Strava, y los errores transitorios o 429 se reintentan con backoff (máximo 6 intentos). La desautorización borra al atleta, sus actividades y sus eventos.
+- **Sin polling:** `python -m app.cli` (cron `rudo-sync`) ya no consulta actividades. Solo reintenta eventos pendientes, revalida la membresía del club una vez por semana (`MEMBERSHIP_REVALIDATION_DAYS`) y depura eventos antiguos.
+- **Diagnóstico:** `GET /admin/strava` (con `ADMIN_SECRET`) y `python -m app.cli status` muestran la cola de eventos, el consumo de la API y los atletas que deben reconectarse.
+- **Recuperación manual acotada:** `python -m app.cli recover --athlete-id <id> --days 7` (máximo 30 días) y `python -m app.cli requeue-failed`.
+
+`https://<dominio>/webhooks/strava` debe estar registrado como callback y `WEBHOOK_VERIFY_TOKEN` definido; la app crea la suscripción al arrancar si no existe.
 
 ## Entrega continua
 
