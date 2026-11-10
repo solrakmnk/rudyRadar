@@ -22,6 +22,7 @@ from app import webhooks as webhook_registration
 from app.strava_events import event_summary, process_event_in_new_session, record_event, requeue_unverified_deletes
 from app.i18n import DEFAULT_LOCALE, SUPPORTED_LOCALES, preferred_locale, translate
 from app.exports import athlete_data_export
+from app.periods import period_nav
 from app.webhooks import register_strava_webhook_after_startup, retry_webhook_events_periodically
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO").upper())
@@ -50,6 +51,7 @@ def duration(value: int | float) -> str:
     hours, minutes = divmod(minutes, 60)
     return f"{hours}h {minutes:02d}m" if hours else f"{minutes}m"
 templates.env.filters["duration"] = duration
+templates.env.globals["period_nav_for"] = period_nav
 logger=logging.getLogger(__name__)
 
 @app.get("/health")

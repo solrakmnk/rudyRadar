@@ -102,6 +102,16 @@ MESSAGES["en"].update({
     "support_signoff": "Radar Rudo · A project for RUD@S members",
 })
 
+MESSAGES["es"].update({
+    "scale_week": "Semana", "scale_month": "Mes", "period_scale": "Escala del periodo", "previous_period_nav": "Periodo anterior", "next_period_nav": "Periodo siguiente", "day_of": "día {day} de {total}",
+    "month_1": "Enero", "month_2": "Febrero", "month_3": "Marzo", "month_4": "Abril", "month_5": "Mayo", "month_6": "Junio", "month_7": "Julio", "month_8": "Agosto", "month_9": "Septiembre", "month_10": "Octubre", "month_11": "Noviembre", "month_12": "Diciembre", "month_short_1": "ene", "month_short_2": "feb", "month_short_3": "mar", "month_short_4": "abr", "month_short_5": "may", "month_short_6": "jun", "month_short_7": "jul", "month_short_8": "ago", "month_short_9": "sep", "month_short_10": "oct", "month_short_11": "nov", "month_short_12": "dic",
+})
+
+MESSAGES["en"].update({
+    "scale_week": "Week", "scale_month": "Month", "period_scale": "Period scale", "previous_period_nav": "Previous period", "next_period_nav": "Next period", "day_of": "day {day} of {total}",
+    "month_1": "January", "month_2": "February", "month_3": "March", "month_4": "April", "month_5": "May", "month_6": "June", "month_7": "July", "month_8": "August", "month_9": "September", "month_10": "October", "month_11": "November", "month_12": "December", "month_short_1": "Jan", "month_short_2": "Feb", "month_short_3": "Mar", "month_short_4": "Apr", "month_short_5": "May", "month_short_6": "Jun", "month_short_7": "Jul", "month_short_8": "Aug", "month_short_9": "Sep", "month_short_10": "Oct", "month_short_11": "Nov", "month_short_12": "Dec",
+})
+
 
 def translate(locale: str, key: str, **values: object) -> str:
     message = MESSAGES.get(locale, MESSAGES[DEFAULT_LOCALE]).get(key, MESSAGES[DEFAULT_LOCALE].get(key, key))
