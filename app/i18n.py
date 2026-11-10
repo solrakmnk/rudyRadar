@@ -112,6 +112,9 @@ MESSAGES["en"].update({
     "month_1": "January", "month_2": "February", "month_3": "March", "month_4": "April", "month_5": "May", "month_6": "June", "month_7": "July", "month_8": "August", "month_9": "September", "month_10": "October", "month_11": "November", "month_12": "December", "month_short_1": "Jan", "month_short_2": "Feb", "month_short_3": "Mar", "month_short_4": "Apr", "month_short_5": "May", "month_short_6": "Jun", "month_short_7": "Jul", "month_short_8": "Aug", "month_short_9": "Sep", "month_short_10": "Oct", "month_short_11": "Nov", "month_short_12": "Dec",
 })
 
+MESSAGES["es"].update({"session_one": "sesión", "sessions_title": "Sesiones"})
+MESSAGES["en"].update({"session_one": "session", "sessions_title": "Sessions"})
+
 
 def translate(locale: str, key: str, **values: object) -> str:
     message = MESSAGES.get(locale, MESSAGES[DEFAULT_LOCALE]).get(key, MESSAGES[DEFAULT_LOCALE].get(key, key))

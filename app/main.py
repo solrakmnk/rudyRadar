@@ -41,7 +41,8 @@ def template_context(request: Request):
     locale = preferred_locale(request.query_params.get("lang"), request.session)
     request.session["locale"] = locale
     current_url=request.url.path+(f"?{request.url.query}" if request.url.query else "")
-    return {"locale": locale, "current_url": current_url, "t": lambda key, **values: translate(locale, key, **values)}
+    t=lambda key, **values: translate(locale, key, **values)
+    return {"locale": locale, "current_url": current_url, "t": t, "sessions": lambda count: f"{count} {t('session_one' if count == 1 else 'sessions')}"}
 templates=Jinja2Templates(directory="app/templates", context_processors=[template_context])
 def mexico_time(value: datetime) -> str:
     return value.astimezone(ZoneInfo(settings.app_timezone)).strftime("%d/%m · %H:%M")
