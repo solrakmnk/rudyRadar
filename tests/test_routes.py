@@ -37,3 +37,13 @@ def test_public_pages_and_protected_routes_are_wired():
         assert "/privacy" in support.text
         assert client.get("/radar", follow_redirects=False).status_code == 303
         assert client.get("/admin", follow_redirects=False).status_code == 401
+
+
+def test_session_counts_use_the_singular_for_one():
+    from starlette.requests import Request
+
+    from app.main import template_context
+
+    scope = {"type": "http", "method": "GET", "path": "/radar", "query_string": b"", "headers": [], "session": {"locale": "es"}}
+    sessions = template_context(Request(scope))["sessions"]
+    assert (sessions(1), sessions(0), sessions(3)) == ("1 sesión", "0 sesiones", "3 sesiones")

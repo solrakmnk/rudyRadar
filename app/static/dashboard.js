@@ -1,6 +1,9 @@
 const formatMetric = (metric, value) => {
   if (metric === "distance") return `${value.toFixed(1)} km`;
-  if (metric === "activities") return `${Math.round(value)} ${document.body.dataset.sessions}`;
+  if (metric === "activities") {
+    const count = Math.round(value);
+    return `${count} ${count === 1 ? document.body.dataset.session : document.body.dataset.sessions}`;
+  }
   const minutes = Math.round(value);
   return minutes >= 60 ? `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, "0")}m` : `${minutes}m`;
 };
