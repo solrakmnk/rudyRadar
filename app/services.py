@@ -205,6 +205,19 @@ def seconds_until_rate_limit_reset(headers: httpx.Headers, now: datetime | None 
     return int((next_window - now).total_seconds()) + 1
 
 
+def profile_photo_url(athlete_payload: dict) -> str | None:
+    """Absolute photo URL from a Strava athlete payload, or None.
+
+    Athletes without a photo get a relative placeholder such as
+    "avatar/athlete/large.png", which is not a usable image URL.
+    """
+    for key in ("profile", "profile_medium"):
+        value = athlete_payload.get(key)
+        if isinstance(value, str) and value.startswith("https://"):
+            return value[:500]
+    return None
+
+
 def is_club_member(clubs: list[dict], club_id: int | None = None) -> bool:
     return any(int(club.get("id", 0)) == (club_id or get_settings().strava_club_id) for club in clubs)
 

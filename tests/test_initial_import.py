@@ -162,13 +162,16 @@ def test_maintenance_command_never_lists_activities(db, monkeypatch, fake_token)
         return [CLUB] if len(clubs_calls) == 1 else [{"id": 1}]
 
     monkeypatch.setattr(StravaClient, "clubs", clubs)
+    monkeypatch.setattr(StravaClient, "athlete", lambda self, token: {"id": 2, "profile": "https://dgalywyr863hv.cloudfront.net/pictures/athletes/2/new/large.jpg"})
     monkeypatch.setattr(StravaClient, "activities", lambda *a, **k: pytest.fail("maintenance must not poll activities"))
 
     result = cli.maintenance(db)
 
     assert result["activity_polling"] is False
-    assert result["membership"] == {"checked": 2, "left_club": 1, "errors": 0}
+    assert result["membership"] == {"checked": 2, "left_club": 1, "errors": 0, "photos_updated": 1}
     assert len(clubs_calls) == 2
+    db.refresh(stale)
+    assert stale.profile_url.endswith("/2/new/large.jpg")
     db.refresh(gone)
     assert (gone.is_active, gone.membership_check_status) == (False, "not_member")
 

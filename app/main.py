@@ -16,7 +16,7 @@ from app.config import get_settings
 from app.database import get_db
 from app.models import Activity, Athlete
 from app.analytics import activity_highlights, athlete_discipline_comparisons, athlete_discipline_stats, athlete_period_stats, discipline_leaderboards, discipline_type_breakdown, period_comparison, rankings, team_active_members, team_discipline_comparisons, team_discipline_members, team_group_stats, team_highlights, team_leaderboard, team_overview, team_sport_highlights
-from app.services import Crypto, StravaClient, StravaError, StravaTransientError, api_metrics, call_with_token, get_valid_access_token, is_club_member, parse_scopes
+from app.services import Crypto, StravaClient, profile_photo_url, StravaError, StravaTransientError, api_metrics, call_with_token, get_valid_access_token, is_club_member, parse_scopes
 from app.sync import import_history
 from app import webhooks as webhook_registration
 from app.strava_events import event_summary, process_event_in_new_session, record_event, requeue_unverified_deletes
@@ -122,7 +122,7 @@ def callback(request:Request, code:str|None=None, state:str|None=None, error:str
     if not athlete: athlete=Athlete(strava_athlete_id=source["id"],firstname=source.get("firstname","Rudy"),lastname=source.get("lastname","")); db.add(athlete)
     had_private=athlete.id is not None and "activity:read_all" in parse_scopes(athlete.authorized_scopes); was_disconnected=athlete.auth_status=="reauth_required"
     athlete.auth_status="connected"; athlete.auth_error=None; athlete.auth_error_at=None
-    crypto=Crypto(); athlete.firstname=source.get("firstname","Rudy"); athlete.lastname=source.get("lastname",""); athlete.profile_url=source.get("profile"); athlete.access_token_encrypted=crypto.encrypt(token); athlete.refresh_token_encrypted=crypto.encrypt(payload["refresh_token"]); athlete.token_expires_at=datetime.fromtimestamp(payload["expires_at"],UTC); athlete.authorized_scopes=",".join(sorted(granted_scopes)); athlete.membership_checked_at=datetime.now(UTC); athlete.membership_check_error=None
+    crypto=Crypto(); athlete.firstname=source.get("firstname","Rudy"); athlete.lastname=source.get("lastname",""); athlete.profile_url=profile_photo_url(source); athlete.access_token_encrypted=crypto.encrypt(token); athlete.refresh_token_encrypted=crypto.encrypt(payload["refresh_token"]); athlete.token_expires_at=datetime.fromtimestamp(payload["expires_at"],UTC); athlete.authorized_scopes=",".join(sorted(granted_scopes)); athlete.membership_checked_at=datetime.now(UTC); athlete.membership_check_error=None
     try:
         clubs=client.clubs(token)
     except StravaTransientError:

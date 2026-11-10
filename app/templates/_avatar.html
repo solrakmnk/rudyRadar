@@ -1,0 +1,13 @@
+{#- Athlete photo with an initial as fallback.
+    Strava returns a relative placeholder ("avatar/athlete/large.png") for athletes
+    without a photo, and stored photo URLs stop working when the athlete changes
+    their picture. Only absolute https URLs are rendered, and an image that fails to
+    load is swapped for the same fallback element (built with textContent, never HTML). -#}
+{% macro avatar(url, name, fallback_class='') -%}
+{%- set initial = (name or '?')[:1] -%}
+{%- if url and url.startswith('https://') -%}
+<img src="{{ url }}" alt="" loading="lazy" referrerpolicy="no-referrer" data-initial="{{ initial }}" data-fallback-class="{{ fallback_class }}" onerror="this.onerror=null;var s=document.createElement('span');if(this.dataset.fallbackClass)s.className=this.dataset.fallbackClass;s.textContent=this.dataset.initial;this.replaceWith(s)">
+{%- else -%}
+<span{% if fallback_class %} class="{{ fallback_class }}"{% endif %}>{{ initial }}</span>
+{%- endif -%}
+{%- endmacro %}
