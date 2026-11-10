@@ -1,16 +1,13 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-import logging
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.models import Activity, Athlete
-from app.services import StravaClient, StravaError, get_valid_access_token, is_club_member, normalize_sport
-
-logger = logging.getLogger(__name__)
+from app.services import StravaClient, get_valid_access_token, normalize_sport
 
 
 def upsert_activity(db: Session, athlete: Athlete, item: dict) -> Activity:
@@ -61,26 +58,3 @@ def sync_activities(db: Session, athlete: Athlete, client: StravaClient, *, look
     db.commit()
     return len(activities)
 
-
-def sync_all_active_athletes(db: Session) -> dict[str, int]:
-    client = StravaClient()
-    result = {"athletes": 0, "activities": 0, "failed": 0}
-    for athlete in db.scalars(select(Athlete).where(Athlete.is_active.is_(True), Athlete.is_club_member.is_(True))):
-        try:
-            token = get_valid_access_token(db, athlete, client)
-            if not is_club_member(client.clubs(token)):
-                athlete.is_club_member = False
-                athlete.is_active = False
-                athlete.membership_check_status = "not_member"
-                athlete.membership_checked_at = datetime.now(UTC)
-                athlete.membership_check_error = None
-                db.commit()
-                logger.info("athlete_id=%s is no longer a RUD@S member", athlete.id)
-                continue
-            result["activities"] += sync_activities(db, athlete, client)
-            result["athletes"] += 1
-        except StravaError:
-            db.rollback()
-            result["failed"] += 1
-            logger.exception("sync failed for internal athlete_id=%s", athlete.id)
-    return result
