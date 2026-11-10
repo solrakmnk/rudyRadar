@@ -72,7 +72,10 @@ class StravaWebhookEvent(Base):
     """
     __tablename__ = "strava_webhook_events"
     __table_args__ = (
-        UniqueConstraint("owner_id", "object_type", "object_id", "aspect_type", "event_time", name="uq_strava_webhook_event"),
+        # event_time has one-second resolution, so two different updates to the same
+        # activity can share it: the content hash keeps both while still collapsing
+        # identical redeliveries.
+        UniqueConstraint("owner_id", "object_type", "object_id", "aspect_type", "event_time", "payload_hash", name="uq_strava_webhook_event"),
         Index("ix_strava_webhook_events_object", "object_type", "object_id"),
         Index("ix_strava_webhook_events_due", "status", "next_attempt_at"),
     )
@@ -84,6 +87,7 @@ class StravaWebhookEvent(Base):
     aspect_type: Mapped[str] = mapped_column(String(20))
     event_time: Mapped[int] = mapped_column(BigInteger)
     updates: Mapped[str | None] = mapped_column(Text, nullable=True)
+    payload_hash: Mapped[str] = mapped_column(String(64), default="")
     # pending | processing | retry | processed | ignored | failed
     status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
     outcome: Mapped[str | None] = mapped_column(String(40), nullable=True)

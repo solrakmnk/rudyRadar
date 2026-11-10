@@ -15,6 +15,7 @@ Strava is only called when the event cannot be applied from its own payload.
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+import hashlib
 import json
 import logging
 
@@ -36,6 +37,7 @@ from app.services import (
     parse_scopes,
 )
 from app.sync import upsert_activity
+from app.webhooks import resolve_subscription_id
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +49,13 @@ RETRYABLE = ("pending", "retry")
 OPEN = ("pending", "retry", "processing")
 LOCAL_UPDATE_FIELDS = {"title", "type"}
 PRIVATE_VISIBILITY = {"only_me", "Only You"}
+# Outcomes after which the local copy reflects Strava's full state at processing time.
+FULL_STATE_OUTCOMES = {"upserted", "not_visible", "removed_private", "deleted", "already_absent"}
+UNVERIFIED_RETRY_SECONDS = 300
+
+
+class SubscriptionUnverified(Exception):
+    """The app's own subscription id is not known yet, so the event cannot be trusted."""
 
 
 def _now() -> datetime:
@@ -84,6 +93,7 @@ def parse_event(payload: dict) -> dict | None:
         # event_time is part of the idempotency key; fall back to receipt time if absent.
         "event_time": event_time if event_time is not None else int(_now().timestamp()),
         "updates": json.dumps(updates, sort_keys=True) if updates else None,
+        "payload_hash": hashlib.sha256(json.dumps(updates, sort_keys=True).encode()).hexdigest(),
     }
 
 
@@ -104,6 +114,7 @@ def record_event(db: Session, payload: dict) -> tuple[StravaWebhookEvent | None,
             StravaWebhookEvent.object_id == fields["object_id"],
             StravaWebhookEvent.aspect_type == fields["aspect_type"],
             StravaWebhookEvent.event_time == fields["event_time"],
+            StravaWebhookEvent.payload_hash == fields["payload_hash"],
         ))
         logger.info("Duplicate Strava webhook delivery ignored event_id=%s", existing.id if existing else None)
         return existing, False
@@ -158,14 +169,30 @@ def _schedule_retry(db: Session, event: StravaWebhookEvent, error: str, min_dela
     return event.status
 
 
-def _newer_event(db: Session, event: StravaWebhookEvent, statuses: tuple[str, ...]) -> StravaWebhookEvent | None:
-    return db.scalar(select(StravaWebhookEvent).where(
+def _event_updates(event: StravaWebhookEvent) -> dict:
+    return json.loads(event.updates) if event.updates else {}
+
+
+def _is_local_update(event: StravaWebhookEvent) -> bool:
+    """An update that can be applied from its own payload (title and/or type only)."""
+    updates = _event_updates(event)
+    return event.aspect_type == "update" and bool(updates) and set(updates) <= LOCAL_UPDATE_FIELDS
+
+
+def _later_events(db: Session, event: StravaWebhookEvent) -> list[StravaWebhookEvent]:
+    """Events for the same object that happened after this one.
+
+    Order is (event_time, id): event_time has one-second resolution, so events
+    sharing a second are ordered by arrival.
+    """
+    candidates = db.scalars(select(StravaWebhookEvent).where(
         StravaWebhookEvent.object_type == event.object_type,
         StravaWebhookEvent.object_id == event.object_id,
         StravaWebhookEvent.id != event.id,
-        StravaWebhookEvent.event_time > event.event_time,
-        StravaWebhookEvent.status.in_(statuses),
-    ).limit(1))
+        StravaWebhookEvent.event_time >= event.event_time,
+        StravaWebhookEvent.status.not_in(("ignored", "failed")),
+    )).all()
+    return [e for e in candidates if (e.event_time, e.id) > (event.event_time, event.id)]
 
 
 def _deleted_at_or_after(db: Session, event: StravaWebhookEvent) -> bool:
@@ -191,15 +218,27 @@ def _apply(db: Session, event: StravaWebhookEvent, client: StravaClient) -> tupl
     athlete = db.scalar(select(Athlete).where(Athlete.strava_athlete_id == event.owner_id))
     updates = json.loads(event.updates) if event.updates else {}
 
+    # Strava push events are not signed. The subscription id filters stray or
+    # misrouted deliveries; it is checked against the id Strava reports for this
+    # app, never trusted blindly while that id is still unknown.
+    known_subscription = resolve_subscription_id()
+    if known_subscription is None:
+        raise SubscriptionUnverified()
+    if event.subscription_id != known_subscription:
+        return "ignored", "untrusted_subscription"
+
     if event.object_type == "athlete":
         if str(updates.get("authorized", "")).lower() == "false":
             if not athlete:
                 return "ignored", "unknown_athlete"
+            if not _deauthorization_confirmed(db, athlete, client):
+                logger.warning("Deauthorization event not confirmed by Strava for athlete_id=%s; data kept", athlete.id)
+                return "ignored", "deauthorization_not_confirmed"
             # Strava deauthorization: delete the athlete, their activities and their event log.
             db.execute(delete(StravaWebhookEvent).where(StravaWebhookEvent.owner_id == event.owner_id, StravaWebhookEvent.id != event.id))
             db.delete(athlete)
             db.commit()
-            logger.warning("Strava deauthorization processed; local athlete data deleted")
+            logger.warning("Strava deauthorization confirmed; local athlete data deleted")
             return "processed", "athlete_deleted"
         return "ignored", "athlete_update_not_used"
 
@@ -217,11 +256,17 @@ def _apply(db: Session, event: StravaWebhookEvent, client: StravaClient) -> tupl
         return "ignored", "athlete_not_syncing"
     if _deleted_at_or_after(db, event):
         return "ignored", "already_deleted"
-    if _newer_event(db, event, ("processed",)):
+    later = _later_events(db, event)
+    if any(e.status == "processed" and e.outcome in FULL_STATE_OUTCOMES for e in later):
+        # A later event already read the activity's full state from Strava.
         return "ignored", "stale"
-    if _newer_event(db, event, OPEN):
-        # A newer event for this activity is queued; it will read the latest state.
+    if any(e.status in OPEN and not _is_local_update(e) for e in later):
+        # A later queued event will read the full state; a later title/type-only
+        # update cannot stand in for this one, so it never supersedes it.
         return "ignored", "superseded"
+    # With any later event around, applying this payload could overwrite newer
+    # values (or miss fields), so read the current state from Strava instead.
+    apply_locally = not later
 
     includes_private = "activity:read_all" in parse_scopes(athlete.authorized_scopes)
     if event.aspect_type == "update":
@@ -231,7 +276,7 @@ def _apply(db: Session, event: StravaWebhookEvent, client: StravaClient) -> tupl
             db.commit()
             return "processed", "removed_private"
         local = db.scalar(select(Activity).where(Activity.strava_activity_id == event.object_id, Activity.athlete_id == athlete.id))
-        if local and updates and set(updates) <= LOCAL_UPDATE_FIELDS:
+        if local and apply_locally and _is_local_update(event):
             # Title and sport type changes come in the event itself.
             if "title" in updates:
                 local.name = str(updates["title"])[:255] or local.name
@@ -266,6 +311,20 @@ def _apply(db: Session, event: StravaWebhookEvent, client: StravaClient) -> tupl
     return "processed", "upserted"
 
 
+def _deauthorization_confirmed(db: Session, athlete: Athlete, client: StravaClient) -> bool:
+    """Deleting an athlete is irreversible, so confirm the revocation with Strava first.
+
+    After a real deauthorization every token Strava issued to this app for the
+    athlete is invalid: the request (and the forced refresh) is rejected. If the
+    athlete's credentials still work, the event did not come from a revocation.
+    """
+    try:
+        call_with_token(db, athlete, client, client.athlete)
+    except StravaAuthError:
+        return True
+    return False
+
+
 def process_event(db: Session, event_id: int, client: StravaClient | None = None) -> str | None:
     """Claim and process one event. Returns its outcome/status, or None if not claimable."""
     event = claim_event(db, event_id)
@@ -275,6 +334,16 @@ def process_event(db: Session, event_id: int, client: StravaClient | None = None
     try:
         status, outcome = _apply(db, event, client)
         return _finish(db, event, status, outcome)
+    except SubscriptionUnverified:
+        db.rollback()
+        # Waiting for the subscription id is not a processing failure: keep the
+        # event queued without consuming one of its attempts.
+        event.attempts = max(event.attempts - 1, 0)
+        event.status, event.last_error = "retry", "subscription_unverified"
+        event.next_attempt_at = _now() + timedelta(seconds=UNVERIFIED_RETRY_SECONDS)
+        db.commit()
+        logger.warning("strava_webhook_event id=%s deferred: subscription id not verified yet", event.id)
+        return "retry"
     except StravaRateLimitError as e:
         db.rollback()
         return _schedule_retry(db, event, "rate_limited", e.retry_after)
@@ -359,6 +428,7 @@ def purge_old_events(db: Session, *, keep_days: int = 30, keep_failed_days: int 
     result = db.execute(delete(StravaWebhookEvent).where(or_(
         (StravaWebhookEvent.status.in_(("processed", "ignored"))) & (StravaWebhookEvent.received_at < now - timedelta(days=keep_days)),
         (StravaWebhookEvent.status == "failed") & (StravaWebhookEvent.received_at < now - timedelta(days=keep_failed_days)),
+        (StravaWebhookEvent.last_error == "subscription_unverified") & (StravaWebhookEvent.received_at < now - timedelta(days=keep_failed_days)),
     )))
     db.commit()
     return result.rowcount or 0

@@ -33,9 +33,17 @@ def summary(activity_id=123, owner=9001, **extra):
 class FakeClient:
     """Counts Strava calls; ``responses`` is a list of items or exceptions returned in order."""
 
-    def __init__(self, *responses):
+    def __init__(self, *responses, athlete=None):
         self.responses = list(responses)
         self.calls = []
+        # Result of GET /athlete, used to confirm deauthorizations. Default: revoked.
+        self.athlete_result = athlete if athlete is not None else StravaAuthError("revoked")
+
+    def athlete(self, token):
+        self.calls.append(("athlete", token))
+        if isinstance(self.athlete_result, Exception):
+            raise self.athlete_result
+        return self.athlete_result
 
     def activity(self, token, activity_id):
         self.calls.append(("activity", activity_id, token))
@@ -154,7 +162,7 @@ def test_activity_not_found_on_strava_is_removed_locally(db, fake_token):
 
 def test_duplicate_delivery_is_recorded_once_and_processed_once(db, fake_token):
     make_athlete(db)
-    payload = {"object_type": "activity", "aspect_type": "create", "object_id": 123, "owner_id": 9001, "event_time": 1000}
+    payload = {"object_type": "activity", "aspect_type": "create", "object_id": 123, "owner_id": 9001, "event_time": 1000, "subscription_id": 7}
     first, new_first = record_event(db, payload)
     second, new_second = record_event(db, payload)
     client = FakeClient(summary())

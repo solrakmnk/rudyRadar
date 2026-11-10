@@ -29,6 +29,16 @@ def db() -> Session:
 
 
 @pytest.fixture(autouse=True)
+def known_subscription(monkeypatch):
+    """Tests run as if startup registration confirmed subscription id 7."""
+    from app import webhooks
+
+    monkeypatch.setattr(webhooks, "active_subscription_id", 7)
+    monkeypatch.setattr(webhooks, "_last_lookup", None)
+    return 7
+
+
+@pytest.fixture(autouse=True)
 def reset_api_metrics():
     api_metrics.reset()
     yield

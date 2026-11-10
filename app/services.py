@@ -244,9 +244,11 @@ class StravaClient:
                 if len(items) < 200:
                     return all_items
                 page += 1
-        except StravaError:
-            # DetailedAthlete includes clubs; this is an official fallback for
-            # applications whose access to the clubs route is restricted.
+        except StravaForbiddenError:
+            # DetailedAthlete includes clubs; this is an official fallback only for
+            # applications whose access to the clubs route is restricted (HTTP 403).
+            # Rate limits, transient failures and invalid tokens propagate: a second
+            # request would fail the same way and only consume more quota.
             profile = self.athlete(token)
             return profile.get("clubs", [])
     def activities(self, token: str, after: datetime, *, max_pages: int = 25):

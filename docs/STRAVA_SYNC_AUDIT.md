@@ -90,14 +90,16 @@ Eliminar el polling, persistir eventos, reintentos controlados, eventos duplicad
 
 | Evento | Acción | ¿Llama a Strava? |
 |---|---|---|
-| Entrega repetida (mismo owner, objeto, aspecto y `event_time`) | Se descarta; responde `{"status":"duplicate"}` | No |
-| `subscription_id` distinto del activo | Se ignora | No |
-| `athlete` `update` con `authorized=false` | Borra al atleta, sus actividades y su historial de eventos, esté activo o no | No |
+| Entrega repetida (mismo owner, objeto, aspecto, `event_time` y hash de `updates`) | Se descarta; responde `{"status":"duplicate"}`. Dos cambios distintos en el mismo segundo se conservan los dos | No |
+| Sin `subscription_id`, o distinto del activo | Se ignora | No |
+| `subscription_id` activo todavía desconocido (por ejemplo, justo después del arranque) | Se guarda; el procesador consulta `GET /push_subscriptions` (como máximo una vez cada 5 min) y reintenta cada 5 min sin consumir intentos. Nada se aplica antes de verificarlo | 1 llamada de app |
+| `athlete` `update` con `authorized=false` | Antes de borrar se confirma con Strava: si `GET /athlete` y el refresh son rechazados, se borra al atleta, sus actividades y su historial de eventos, esté activo o no. Si las credenciales siguen funcionando, el evento se ignora (`deauthorization_not_confirmed`) | 1–2 llamadas |
 | `activity` `delete` | Borra la actividad local | No |
 | Atleta desconocido, fuera del club o `reauth_required` | Se ignora | No |
-| Evento anterior a uno ya aplicado, o a una eliminación | `stale` o `already_deleted` | No |
-| Hay un evento más reciente pendiente para la misma actividad | `superseded` (el más reciente traerá el estado final) | No |
-| `update` con solo `title` y/o `type` sobre una actividad conocida | Se aplica desde el payload | No |
+| Evento anterior a una eliminación, o a un evento posterior que ya leyó el estado completo | `stale` o `already_deleted` | No |
+| Hay un evento posterior pendiente que leerá el estado completo (alta, eliminación o cambio que no sea solo título o tipo) | `superseded`. Un cambio de solo título o tipo nunca reemplaza a otro evento | No |
+| `update` con solo `title` y/o `type`, sin eventos posteriores | Se aplica desde el payload | No |
+| Cualquier evento que tiene eventos posteriores para la misma actividad | Se lee el estado actual con `GET /activities/{id}`, para no sobrescribir valores nuevos. El orden es (`event_time`, id), porque `event_time` tiene resolución de un segundo | 1 llamada |
 | `update` con `private=true` sin `activity:read_all` | Borra la actividad local | No |
 | `create` u otro `update` | `GET /activities/{id}` y upsert | 1 llamada |
 | Respuesta 404 o 403 | Borra la actividad local (eliminada o ya no visible) | — |
@@ -106,10 +108,17 @@ Eliminar el polling, persistir eventos, reintentos controlados, eventos duplicad
 | 5xx, timeout o error interno | Reintento con backoff de 1 min, 5 min, 15 min, 1 h y 6 h; después `failed` | — |
 | 429 | Reintento después de que se reinicie la ventana; se detiene el resto de la cola | — |
 
+### Correcciones de la revisión del PR #1
+
+1. **Validación de suscripción:** el webhook ya no confía en eventos mientras `active_subscription_id` es `None`. Los guarda, los verifica contra Strava antes de aplicarlos y rechaza los que no traen `subscription_id`. Como los eventos de Strava no están firmados, la eliminación de un atleta además requiere que Strava confirme que sus credenciales fueron revocadas.
+2. **`history_done`:** depende solo de `history_synced_at` y de `initial_import_status == "completed"`, así que un atleta sin actividades ya no se reimporta en cada login.
+3. **Deduplicación:** la clave incluye `payload_hash` (SHA-256 del `updates` canónico). Las reglas de orden ya no descartan un evento que necesita fetch por culpa de un cambio posterior de solo título o tipo.
+4. **`clubs()`:** el fallback a `GET /athlete` solo ocurre ante un 403. Los 429, 5xx, timeouts y 401 se propagan. Además, un fallo transitorio de la verificación del club ya no desactiva a un miembro ya verificado (en el login ni en `/admin`).
+
 ## 8. Pruebas ejecutadas
 
-- `pytest -q` sobre SQLite: **85 pasadas**.
-- `TEST_DATABASE_URL=postgresql+psycopg://… pytest -q` sobre PostgreSQL 16: **85 pasadas**.
+- `pytest -q` sobre SQLite: **104 pasadas** (19 de ellas en `tests/test_review_regressions.py`).
+- `TEST_DATABASE_URL=postgresql+psycopg://… pytest -q` sobre PostgreSQL 16: **104 pasadas**.
 - Migración en PostgreSQL 16: `upgrade 0012 → 0013` con datos previos (el atleta con historial queda `completed` y el que no tiene queda `pending`), `downgrade` y `upgrade` sin pérdida de datos.
 - Prueba de humo con uvicorn y PostgreSQL: el webhook responde 200 en ~80 ms; la segunda entrega devuelve `duplicate`; `delete` se aplica sin llamar a la API; un owner desconocido queda `ignored`; `/admin/strava` y `python -m app.cli` y `status` funcionan. Una falla de descifrado se registra sin tumbar el comando.
 
@@ -154,8 +163,8 @@ Cobertura de los escenarios pedidos: primera conexión e importación paginada, 
 >
 > 1. **Periodic polling removed.** Previously, a scheduled job downloaded the last 21 days of activities for every connected athlete every two hours (about 240 requests per day for 10 athletes, almost all returning unchanged data). That job no longer reads activities. It only retries webhook events that previously failed with a transient error and revalidates club membership once per week per athlete.
 > 2. **One-time historical import.** On an athlete's first authorization we import a bounded window of summary activities through `GET /athlete/activities` with 200 items per page and a hard page cap. The result and status of the import are recorded. Regular logins make no activity requests. The list endpoint is used again only if the athlete changes the private-activity scope, or reconnects after their credentials stopped working (and then only for the missing days).
-> 3. **Webhook-driven updates.** Every push event is stored in a durable queue before we return HTTP 200, then processed asynchronously. Redelivered events are deduplicated, out-of-order and superseded events are skipped, deletions are applied locally, and title or type changes are applied directly from the event payload. We call `GET /activities/{id}` only for creations and for updates that the payload cannot describe. Events from unknown subscriptions are ignored.
-> 4. **Deauthorization and privacy.** An `authorized=false` athlete event deletes the athlete, their activities and their event records. Activities that become private are removed when the athlete has not granted `activity:read_all`. Account deletion revokes access through `POST /oauth/deauthorize`.
+> 3. **Webhook-driven updates.** Every push event is stored in a durable queue before we return HTTP 200, then processed asynchronously. Redelivered events are deduplicated, out-of-order and superseded events are skipped, deletions are applied locally, and title or type changes are applied directly from the event payload. We call `GET /activities/{id}` only for creations and for updates that the payload cannot describe. Events are acted on only after their `subscription_id` matches the subscription Strava reports for our app.
+> 4. **Deauthorization and privacy.** An `authorized=false` athlete event, once confirmed by Strava rejecting the athlete's credentials, deletes the athlete, their activities and their event records. Activities that become private are removed when the athlete has not granted `activity:read_all`. Account deletion revokes access through `POST /oauth/deauthorize`.
 > 5. **Tokens and disconnections.** Tokens are encrypted at rest and refreshed shortly before expiry. A 401 triggers a single refresh and retry. A rejected refresh token marks the athlete as requiring re-authorization, excludes them from all further API calls and stops retries until they reconnect.
 > 6. **Rate limits and resilience.** Rate-limit headers are recorded. On HTTP 429 all API calls pause until the 15-minute or daily window resets. Transient errors (5xx, timeouts) are retried with exponential backoff, up to six attempts. An admin diagnostics endpoint exposes API consumption by endpoint and any unprocessed events.
 >

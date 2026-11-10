@@ -32,6 +32,7 @@ def upgrade():
         sa.Column("aspect_type", sa.String(length=20), nullable=False),
         sa.Column("event_time", sa.BigInteger(), nullable=False),
         sa.Column("updates", sa.Text(), nullable=True),
+        sa.Column("payload_hash", sa.String(length=64), nullable=False, server_default=""),
         sa.Column("status", sa.String(length=20), nullable=False, server_default="pending"),
         sa.Column("outcome", sa.String(length=40), nullable=True),
         sa.Column("attempts", sa.Integer(), nullable=False, server_default="0"),
@@ -39,7 +40,7 @@ def upgrade():
         sa.Column("next_attempt_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("received_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
         sa.Column("processed_at", sa.DateTime(timezone=True), nullable=True),
-        sa.UniqueConstraint("owner_id", "object_type", "object_id", "aspect_type", "event_time", name="uq_strava_webhook_event"),
+        sa.UniqueConstraint("owner_id", "object_type", "object_id", "aspect_type", "event_time", "payload_hash", name="uq_strava_webhook_event"),
     )
     op.create_index("ix_strava_webhook_events_owner_id", "strava_webhook_events", ["owner_id"])
     op.create_index("ix_strava_webhook_events_status", "strava_webhook_events", ["status"])

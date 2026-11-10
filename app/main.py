@@ -125,6 +125,14 @@ def callback(request:Request, code:str|None=None, state:str|None=None, error:str
     crypto=Crypto(); athlete.firstname=source.get("firstname","Rudy"); athlete.lastname=source.get("lastname",""); athlete.profile_url=source.get("profile"); athlete.access_token_encrypted=crypto.encrypt(token); athlete.refresh_token_encrypted=crypto.encrypt(payload["refresh_token"]); athlete.token_expires_at=datetime.fromtimestamp(payload["expires_at"],UTC); athlete.authorized_scopes=",".join(sorted(granted_scopes)); athlete.membership_checked_at=datetime.now(UTC); athlete.membership_check_error=None
     try:
         clubs=client.clubs(token)
+    except StravaTransientError:
+        # Strava is rate limiting or unavailable: this says nothing about membership,
+        # so a member who was already verified keeps their access.
+        athlete.membership_check_error="club_lookup_unavailable"
+        if athlete.membership_check_status!="verified": athlete.membership_check_status="unavailable"; athlete.is_active=False; athlete.is_club_member=False
+        db.commit()
+        logger.warning("RUD@S membership check deferred for strava_athlete_id=%s: Strava temporarily unavailable", athlete.strava_athlete_id)
+        return templates.TemplateResponse(request,"not_member.html",{"verification_issue":True},status_code=503)
     except StravaError as e:
         athlete.membership_check_status="unavailable"; athlete.membership_check_error="club_lookup_failed"; athlete.is_active=False; athlete.is_club_member=False; db.commit()
         logger.warning("Could not verify RUD@S membership for strava_athlete_id=%s", athlete.strava_athlete_id)
@@ -137,8 +145,9 @@ def callback(request:Request, code:str|None=None, state:str|None=None, error:str
     # the first connection, a change in the privacy scope, or a reconnection after the
     # credentials stopped working. A normal login makes no activity request.
     has_private="activity:read_all" in granted_scopes
-    stored_activities=db.scalar(select(func.count(Activity.id)).where(Activity.athlete_id==athlete.id)) or 0
-    history_done=athlete.history_synced_at is not None and athlete.initial_import_status=="completed" and stored_activities>0
+    # The import's own record decides; an athlete whose history is legitimately empty
+    # (no activities in the window) must not be re-imported on every login.
+    history_done=athlete.history_synced_at is not None and athlete.initial_import_status=="completed"
     lost_private=(had_private and not has_private) or remove_private
     if not history_done or has_private!=had_private or remove_private:
         lookback_days=settings.strava_initial_history_days; reconcile=lost_private
@@ -190,6 +199,8 @@ def revalidate_athlete(athlete_id:int, db:Session=Depends(get_db)):
     try:
         client=StravaClient(); clubs=call_with_token(db,athlete,client,client.clubs)
         verified=is_club_member(clubs); athlete.membership_check_status="verified" if verified else "not_member"; athlete.is_club_member=verified; athlete.is_active=verified
+    except StravaTransientError:
+        athlete.membership_check_error="club_lookup_unavailable"
     except StravaError:
         athlete.membership_check_status="unavailable"; athlete.membership_check_error="club_lookup_failed"; athlete.is_club_member=False; athlete.is_active=False
     db.commit()
@@ -228,8 +239,11 @@ async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
     try: payload=await request.json()
     except ValueError: raise HTTPException(400)
     if not isinstance(payload,dict): raise HTTPException(400)
+    # Validation policy: a known subscription id must match. While it is still
+    # unknown (e.g. right after startup) the event is stored but not acted on: the
+    # processor verifies it against Strava first and retries until it can.
     expected=webhook_registration.active_subscription_id
-    if expected is not None and payload.get("subscription_id")!=expected:
+    if not isinstance(payload.get("subscription_id"),int) or (expected is not None and payload["subscription_id"]!=expected):
         logger.warning("Ignoring Strava webhook for an unknown subscription")
         return {"status":"ignored"}
     # Persist before acknowledging so a crash or redeploy never loses the event,
