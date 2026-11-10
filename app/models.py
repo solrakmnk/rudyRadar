@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import BigInteger, Boolean, DateTime, Float, ForeignKey, Integer, String, UniqueConstraint, func
+from sqlalchemy import BigInteger, Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
@@ -22,6 +22,14 @@ class Athlete(Base):
     connected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     last_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     history_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # connected | reauth_required. reauth_required athletes are skipped by every Strava call.
+    auth_status: Mapped[str] = mapped_column(String(30), default="connected", server_default="connected")
+    auth_error: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    auth_error_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # pending | running | completed | failed — result of the one-time history import.
+    initial_import_status: Mapped[str] = mapped_column(String(20), default="pending", server_default="pending")
+    initial_import_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    initial_import_error: Mapped[str | None] = mapped_column(String(120), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     activities: Mapped[list["Activity"]] = relationship(back_populates="athlete", cascade="all, delete-orphan")
@@ -54,3 +62,37 @@ class Activity(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     athlete: Mapped[Athlete] = relationship(back_populates="activities")
+
+
+class StravaWebhookEvent(Base):
+    """Durable log of every webhook delivery, used for idempotency, retries and diagnosis.
+
+    Only identifiers and Strava's ``updates`` map are stored: no tokens and no
+    activity content.
+    """
+    __tablename__ = "strava_webhook_events"
+    __table_args__ = (
+        # event_time has one-second resolution, so two different updates to the same
+        # activity can share it: the content hash keeps both while still collapsing
+        # identical redeliveries.
+        UniqueConstraint("owner_id", "object_type", "object_id", "aspect_type", "event_time", "payload_hash", name="uq_strava_webhook_event"),
+        Index("ix_strava_webhook_events_object", "object_type", "object_id"),
+        Index("ix_strava_webhook_events_due", "status", "next_attempt_at"),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    subscription_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    owner_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    object_type: Mapped[str] = mapped_column(String(20))
+    object_id: Mapped[int] = mapped_column(BigInteger)
+    aspect_type: Mapped[str] = mapped_column(String(20))
+    event_time: Mapped[int] = mapped_column(BigInteger)
+    updates: Mapped[str | None] = mapped_column(Text, nullable=True)
+    payload_hash: Mapped[str] = mapped_column(String(64), default="")
+    # pending | processing | retry | processed | ignored | failed
+    status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
+    outcome: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    last_error: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

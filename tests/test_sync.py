@@ -35,7 +35,7 @@ def test_upsert_activity_updates_an_existing_strava_activity(db):
     assert second.visibility == "Only You"
 
 
-def test_reconcile_removes_activities_no_longer_visible(db, monkeypatch):
+def test_reconcile_removes_activities_no_longer_visible(db, monkeypatch, fake_token):
     athlete = Athlete(strava_athlete_id=100, firstname="Rudo", lastname="Privado")
     db.add(athlete)
     db.flush()
@@ -46,7 +46,6 @@ def test_reconcile_removes_activities_no_longer_visible(db, monkeypatch):
     db.add(hidden)
     db.commit()
 
-    monkeypatch.setattr("app.sync.get_valid_access_token", lambda *_: "token")
     monkeypatch.setattr("app.sync.get_settings", lambda: SimpleNamespace(strava_initial_history_days=365, strava_rolling_sync_days=21))
 
     class VisibleOnlyClient:

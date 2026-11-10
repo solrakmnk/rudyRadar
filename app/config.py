@@ -18,6 +18,10 @@ class Settings(BaseSettings):
     webhook_verify_token: str = ""
     strava_initial_history_days: int = 365
     strava_rolling_sync_days: int = 21
+    # How often the web process retries due webhook events (0 disables the loop).
+    webhook_retry_interval_seconds: int = 60
+    # Club membership is revalidated by the maintenance command at most this often.
+    membership_revalidation_days: int = 7
 
 @lru_cache
 def get_settings() -> Settings:
