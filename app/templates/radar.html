@@ -1,4 +1,4 @@
-{% extends 'base.html' %}{% from '_avatar.html' import avatar %}
+{% extends 'base.html' %}{% from '_avatar.html' import avatar %}{% from '_period_nav.html' import period_nav with context %}
 {% from '_comparison.html' import period_bars with context %}
 {% block body %}
 {% set non_distance = ['strength','cardio','wellbeing'] %}
@@ -11,7 +11,7 @@
 
   <header class="dashboard-top dashboard-intro">
     <div><p class="eyebrow">{{ t('your_radar') }}</p><h1>{{ t('greeting') }} <strong>{{ athlete.firstname }}.</strong></h1><p class="dashboard-kicker">{{ t('dashboard_kicker') }}</p></div>
-    <div class="tabs tabs--primary" aria-label="{{ t('period') }}"><a data-period-link href="/radar?period=week&amp;sport={{ default_sport }}" class="{{ 'active' if period == 'week' }}">{{ t('this_week') }}</a><a data-period-link href="/radar?period=last_week&amp;sport={{ default_sport }}" class="{{ 'active' if period == 'last_week' }}">{{ t('last_week') }}</a><a data-period-link href="/radar?period=month&amp;sport={{ default_sport }}" class="{{ 'active' if period == 'month' }}">{{ t('this_month') }}</a><a data-period-link href="/radar?period=last_month&amp;sport={{ default_sport }}" class="{{ 'active' if period == 'last_month' }}">{{ t('last_month') }}</a><a data-period-link href="/radar?period=two_months_ago&amp;sport={{ default_sport }}" class="{{ 'active' if period == 'two_months_ago' }}">{{ t('two_months_ago') }}</a></div>
+    {{ period_nav(period_nav_for(period, locale), '/radar', '&sport=' ~ default_sport, 'data-period-link') }}
   </header>
   <aside class="privacy-note">{{ t('visible_dashboard_note') }} <a href="/account">{{ t('review_access') }}</a></aside>
 

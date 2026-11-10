@@ -1,0 +1,17 @@
+{#- Period selector: a week/month scale switch plus previous/next arrows.
+    `base` is the page path; `extra` is appended to every link (e.g. "&sport=swim").
+    `link_attr` marks links whose sport parameter dashboard.js keeps in sync. -#}
+{% macro period_nav(nav, base, extra='', link_attr='') -%}
+<nav class="period-nav" aria-label="{{ t('period') }}">
+  <div class="period-scale" role="group" aria-label="{{ t('period_scale') }}">
+    {%- for scale in ['week', 'month'] %}<a {{ link_attr }} href="{{ base }}?period={{ scale }}{{ extra }}" class="{{ 'active' if nav.scale == scale }}"{% if nav.scale == scale %} aria-current="true"{% endif %}>{{ t('scale_' ~ scale) }}</a>{% endfor -%}
+  </div>
+  <div class="period-stepper">
+    {%- if nav.previous %}<a {{ link_attr }} class="period-step" href="{{ base }}?period={{ nav.previous }}{{ extra }}" aria-label="{{ t('previous_period_nav') }}" title="{{ t('previous_period_nav') }}"><span aria-hidden="true">‹</span></a>
+    {%- else %}<span class="period-step" aria-disabled="true"><span aria-hidden="true">‹</span></span>{% endif -%}
+    <p class="period-current" aria-live="polite"><b>{{ nav.label }}</b><small>{{ nav.detail }}</small></p>
+    {%- if nav.next %}<a {{ link_attr }} class="period-step" href="{{ base }}?period={{ nav.next }}{{ extra }}" aria-label="{{ t('next_period_nav') }}" title="{{ t('next_period_nav') }}"><span aria-hidden="true">›</span></a>
+    {%- else %}<span class="period-step" aria-disabled="true"><span aria-hidden="true">›</span></span>{% endif -%}
+  </div>
+</nav>
+{%- endmacro %}
